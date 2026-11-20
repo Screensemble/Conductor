@@ -525,6 +525,15 @@ const conductor = {
   armed_at: null,
 };
 
+// Clocks drift — refresh samples while a session stays armed so a long hold
+// doesn't skew the release deadline. Probe traffic is trivial vs. skew.
+setInterval(() => {
+  if (!conductor.armed) return;
+  for (const id of conductor.players) {
+    probeClock(id).catch(() => {});
+  }
+}, 30_000).unref();
+
 function conductorReadiness() {
   const rows = [...conductor.players].map((id) => ({
     player_id: id,

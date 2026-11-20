@@ -64,6 +64,10 @@
   button.act:hover { background: #2a4a7a; }
   button.act.danger { color: var(--err); }
   .editrow td { background: #0d1b33; }
+  .row { display: flex; gap: 22px; align-items: center; flex-wrap: wrap; }
+  .row select, .row input { background: #000; border: 1px solid var(--edge);
+    color: var(--text); border-radius: 6px; padding: 5px 8px;
+    font: inherit; margin: 0 4px; }
   .editrow input { background: #000; border: 1px solid var(--edge);
                    border-radius: 5px; color: var(--text); padding: 7px 10px;
                    font-size: 14px; width: 60%; }
@@ -130,15 +134,30 @@
         <button class="arm" onclick="conduct('arm')">ARM</button>
         <button class="go" onclick="conduct('go')">GO</button>
       </div>
+      <div class="pad row">
+        <label>Release when
+          <select id="policy">
+            <option value="all">all staged</option>
+            <option value="min">at least</option>
+            <option value="any">proceed anyway</option>
+          </select>
+          <input id="minReady" type="number" min="1" value="1" style="width:60px" title="minimum ready (for 'at least')">
+          staged
+        </label>
+        <label>lead
+          <input id="leadMs" type="number" min="0" max="30000" step="50" value="500" style="width:80px"> ms
+        </label>
+      </div>
       <div class="pad dim">
-        Arm stages every connected display at playlist item 1 — videos pause
-        on their first frame, images show statically. Go releases them all
-        at once.
+        Arm probes each display's clock and stages playlist item 1 — videos
+        pause on their first frame, images show statically. Go converts one
+        release instant into every display's own clock so they all start
+        together regardless of socket timing.
       </div>
     </div>
     <div class="card">
-      <h2>Readiness</h2>
-      <table><thead><tr><th></th><th>Display</th><th>State</th><th>Staged</th></tr></thead>
+      <h2>Readiness <span id="readyCount" class="dim"></span></h2>
+      <table><thead><tr><th></th><th>Display</th><th>State</th><th>Clock</th></tr></thead>
       <tbody id="ready"></tbody></table>
     </div>
   </div>
@@ -315,22 +334,39 @@ async function togglePlaylist(id, btn) {
 }
 
 async function conduct(c) {
-  const r = await api(`/api/conductor/${c}`, { method: "POST" });
-  toast(`${c.toUpperCase()} → ${r.delivered ?? 0} display(s)`);
+  const body = c === "go" ? {
+    policy: $("policy").value,
+    min_ready: Number($("minReady").value) || 1,
+    lead_ms: Number($("leadMs").value) || 500,
+  } : {};
+  const r = await api(`/api/conductor/${c}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (r.error) toast(`${c.toUpperCase()}: ${r.error}`);
+  else toast(c === "go"
+    ? `GO → released ${Object.values(r.results || {}).filter(x => x.released).length} display(s)`
+    : `ARM → ${r.delivered ?? 0} display(s)`);
   setTimeout(refresh, 500);
 }
 
-function renderReady() {
-  const tb = $("ready");
-  tb.innerHTML = players.length ? players.map(p => {
-    const st = p.status || {};
+async function renderReady() {
+  const d = await api("/api/conductor");
+  const rows = d.players || [];
+  $("readyCount").textContent =
+    d.armed ? `— ${d.ready}/${d.total} staged` : "";
+  const nameOf = (id) =>
+    (players.find(p => p.id === id) || {}).name || id;
+  $("ready").innerHTML = rows.length ? rows.map(r => {
     return `<tr>
-      <td><span class="dot ${p.online ? (st.armed ? "armed" : "on") : ""}"></span></td>
-      <td><a class="name" href="/display.html?id=${encodeURIComponent(p.id)}">${esc(p.name || p.id)}</a></td>
-      <td class="dim">${p.online ? esc(st.current || "ready") : "offline"}</td>
-      <td>${st.armed ? '<span class="badge warn">ARMED</span>' : ""}</td>
+      <td><span class="dot ${r.online ? (r.armed ? "armed" : "on") : ""}"></span></td>
+      <td><a class="name" href="/display.html?id=${encodeURIComponent(r.player_id)}">${esc(nameOf(r.player_id))}</a></td>
+      <td class="dim">${r.armed ? '<span class="badge warn">ARMED</span>'
+        : (r.online ? "online" : "offline")}</td>
+      <td class="dim">${r.clock ? `±${r.clock.rtt}ms rtt` : "no probe"}</td>
     </tr>`;
-  }).join("") : `<tr><td colspan="4" class="dim">No displays.</td></tr>`;
+  }).join("") : `<tr><td colspan="4" class="dim">Arm to stage the displays.</td></tr>`;
 }
 
 async function refreshPending() {
