@@ -20,6 +20,8 @@ import { registry } from './registry.js';
 
 const live = new Map();        // player_id -> ws
 const pendingReq = new Map();  // req_id -> { resolve, timer }
+const pendingPing = new Map(); // nonce  -> { resolve, timer, t0, playerId }
+const clock = new Map();       // player_id -> { mono, rtt, at } best sample
 let onPushProgress = () => {}; // set by uploads.js
 
 export function setPushProgressHandler(fn) {
@@ -111,6 +113,21 @@ export function handlePlayerConnection(ws, req) {
       onPushProgress(playerId, msg);
       return;
     }
+    if (msg.type === 'clock_pong' && pendingPing.has(msg.nonce)) {
+      const p = pendingPing.get(msg.nonce);
+      pendingPing.delete(msg.nonce);
+      clearTimeout(p.timer);
+      const rtt = Date.now() - p.t0;
+      // Keep the lowest-RTT sample — asymmetric latency only ever inflates
+      // it, so the fastest round trip is the best estimate of the display's
+      // monotonic clock at receive time.
+      const prev = clock.get(playerId);
+      if (!prev || rtt <= prev.rtt) {
+        clock.set(playerId, { mono: msg.mono, rtt, at: Date.now() });
+      }
+      p.resolve({ mono: msg.mono, rtt });
+      return;
+    }
 
     registry.touch(playerId, {
       online: true,
@@ -184,4 +201,53 @@ export function requestFromPlayer(id, obj, timeoutMs = 8000) {
     pendingReq.set(reqId, { resolve, timer });
     ws.send(JSON.stringify({ ...obj, id: reqId }));
   });
+}
+
+// NTP-lite: ask a display for its monotonic clock. Repeating and keeping the
+// lowest-RTT sample squeezes out jitter; `samples` is small on purpose since
+// probing adds socket traffic to every arm.
+export function probeClock(id, samples = 3, timeoutMs = 2000) {
+  const ws = live.get(id);
+  if (!ws) return Promise.reject(new Error('display offline'));
+  return new Promise((resolve, reject) => {
+    let sent = 0;
+    const fire = () => {
+      sent += 1;
+      const nonce = randomBytes(6).toString('hex');
+      const timer = setTimeout(() => {
+        pendingPing.delete(nonce);
+        if (clock.has(id)) resolve(clock.get(id));
+        else reject(new Error('clock probe timed out'));
+      }, timeoutMs);
+      pendingPing.set(nonce, {
+        playerId: id,
+        t0: Date.now(),
+        timer,
+        resolve: (r) => {
+          if (sent < samples) fire();
+          else resolve(r);
+        },
+      });
+      ws.send(JSON.stringify({ type: 'clock_probe', nonce }));
+    };
+    fire();
+  });
+}
+
+// Estimated display monotonic ms right now, from the best probe sample.
+export function monoNow(id) {
+  const c = clock.get(id);
+  return c ? c.mono + c.rtt / 2 + (Date.now() - c.at) : null;
+}
+
+// Convert "release N ms from now" into the display's own monotonic domain so
+// every display fires on the same instant regardless of when its `go` lands.
+export function deadlineFor(id, leadMs) {
+  const m = monoNow(id);
+  return m === null ? null : m + leadMs;
+}
+
+export function clockInfo(id) {
+  const c = clock.get(id);
+  return c ? { rtt: c.rtt, age_ms: Date.now() - c.at } : null;
 }

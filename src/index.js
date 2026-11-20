@@ -16,10 +16,13 @@ import { config } from './config.js';
 import { triggerRouter } from './triggers.js';
 import { pairingPublicRouter, pairingRouter } from './pairing.js';
 import {
+  clockInfo,
+  deadlineFor,
   disconnectPlayer,
   handlePlayerConnection,
   livePlayerIds,
   playerOnline,
+  probeClock,
   requestFromPlayer,
   sendToPlayer,
   startHeartbeat,
@@ -105,10 +108,12 @@ app.get('/api/uploads/file/:fileId', async (req, res) => {
   serveStaged(req.params.fileId, res);
 });
 
-// Hardware triggers authenticate with a bearer player token / TRIGGER_TOKEN,
-// or fall through to the dashboard session.
+// Hardware triggers authenticate POSTs with a bearer player token /
+// TRIGGER_TOKEN — firing is all a device can do. Map management
+// (GET/PUT/DELETE) always needs a dashboard session.
 app.use('/api/triggers', async (req, res, next) => {
-  if (triggerTokenOk(req) || (await sessionOf(req))) return next();
+  if (req.method === 'POST' && triggerTokenOk(req)) return next();
+  if (await sessionOf(req)) return next();
   res.status(401).json({ error: 'trigger authentication required' });
 });
 app.use('/api/triggers', triggerRouter);
@@ -505,18 +510,92 @@ app.get('/api/uploads', (_req, res) => {
   res.json({ jobs: jobList() });
 });
 
-// Conductor — broadcast arm/go to every connected display. Arm stages
-// item 0 (videos paused on frame one, images shown); go releases all of
-// them at once for synchronized starts.
-app.post('/api/conductor/:cmd', (req, res) => {
+// Conductor — synchronized multi-display arm/go. Arm probes each display's
+// monotonic clock and stages item 0 (videos paused on frame one, images
+// shown statically); go converts one release instant into every display's
+// own clock domain so they all start together regardless of socket jitter.
+//
+// POST /api/conductor/arm { players?: [id] }        stage + probe clocks
+// POST /api/conductor/go  { lead_ms?, policy?,      release the staged set
+//                           min_ready? }            policy: all|min|any
+// GET  /api/conductor                               session + readiness
+const conductor = {
+  armed: false,
+  players: new Set(),   // ids staged by the last arm
+  armed_at: null,
+};
+
+function conductorReadiness() {
+  const rows = [...conductor.players].map((id) => ({
+    player_id: id,
+    online: playerOnline(id),
+    armed: Boolean(registry.players.get(id)?.status?.armed),
+    clock: clockInfo(id),
+  }));
+  return {
+    armed: conductor.armed,
+    armed_at: conductor.armed_at,
+    players: rows,
+    ready: rows.filter((r) => r.online && r.armed).length,
+    total: rows.length,
+  };
+}
+
+app.get('/api/conductor', (_req, res) => {
+  res.json(conductorReadiness());
+});
+
+app.post('/api/conductor/:cmd', async (req, res) => {
   const cmd = req.params.cmd;
-  if (cmd !== 'arm' && cmd !== 'go') {
-    return res.status(400).json({ error: 'arm|go only' });
+  const targets = Array.isArray(req.body?.players)
+    ? req.body.players.filter((id) => livePlayerIds().includes(id))
+    : livePlayerIds();
+
+  if (cmd === 'arm') {
+    conductor.players = new Set(targets);
+    conductor.armed = true;
+    conductor.armed_at = new Date().toISOString();
+    // Probe before arming so the clock sample exists by the time go fires.
+    await Promise.allSettled(targets.map((id) => probeClock(id)));
+    const sent = targets.filter((id) =>
+      sendToPlayer(id, { type: 'command', cmd: 'arm' })
+    );
+    return res.json({ ok: true, cmd, delivered: sent.length, players: sent });
   }
-  const sent = livePlayerIds().filter((id) =>
-    sendToPlayer(id, { type: 'command', cmd })
-  );
-  res.json({ ok: true, cmd, delivered: sent.length, players: sent });
+
+  if (cmd === 'go') {
+    if (!conductor.armed) {
+      return res.status(409).json({ error: 'nothing armed — POST /api/conductor/arm first' });
+    }
+    const ready = conductorReadiness();
+    const policy = req.body?.policy ?? 'all';
+    const minReady = Number(req.body?.min_ready) || 0;
+    if (policy === 'all' && ready.ready < ready.total) {
+      return res.status(409).json({ error: `only ${ready.ready}/${ready.total} staged`, readiness: ready });
+    }
+    if (policy === 'min' && ready.ready < minReady) {
+      return res.status(409).json({ error: `${ready.ready} staged, need ${minReady}`, readiness: ready });
+    }
+    // policy 'any' (or satisfied all/min) — release whoever is staged.
+    const leadMs = Math.min(Math.max(Number(req.body?.lead_ms) || 500, 0), 30_000);
+    const results = {};
+    for (const id of conductor.players) {
+      const r = registry.players.get(id);
+      if (!playerOnline(id) || !r?.status?.armed) {
+        results[id] = { released: false, reason: 'not armed' };
+        continue;
+      }
+      const at = deadlineFor(id, leadMs);
+      results[id] = at === null
+        ? { released: false, reason: 'no clock sample' }
+        : { released: sendToPlayer(id, { type: 'command', cmd: 'go', at_mono: at }), at_mono: at };
+    }
+    conductor.armed = false;
+    conductor.players = new Set();
+    return res.json({ ok: true, cmd, lead_ms: leadMs, results });
+  }
+
+  res.status(400).json({ error: 'arm|go only' });
 });
 
 app.delete('/api/players/:id', (req, res) => {
