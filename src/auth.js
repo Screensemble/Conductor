@@ -40,10 +40,13 @@ function loadSecret() {
 export const auth = betterAuth({
   database: authDb,
   secret: loadSecret(),
-  // Self-hosted on arbitrary hosts/IPs — sessions are same-site cookies;
-  // origins can't be allowlisted ahead of time, so accept the request's own.
-  trustedOrigins: (request) =>
-    request?.headers?.get?.('origin') ? [request.headers.get('origin')] : [],
+  // Self-hosted on arbitrary hosts/IPs — origins can't be allowlisted ahead
+  // of time, so trust the host the request arrived on (never a foreign
+  // Origin header, which would also trust its callback/redirect URLs).
+  trustedOrigins: (request) => {
+    const host = request?.headers?.get?.('host');
+    return host ? [`http://${host}`, `https://${host}`] : [];
+  },
   // Session cookies are SameSite=Lax (cross-site POSTs never carry them),
   // so CSRF is already covered — disabling the Fetch-Metadata check lets
   // non-browser clients (curl, scripts, agents) call auth endpoints too.
