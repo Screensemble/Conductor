@@ -1,3 +1,4 @@
+import './restore.js'; // boot-time restore swap — must precede data modules
 import { createServer } from 'node:http';
 import express from 'express';
 import { WebSocketServer } from 'ws';
@@ -28,6 +29,7 @@ import {
   startHeartbeat,
 } from './players.js';
 import { registry } from './registry.js';
+import { stageRestore, streamBackup } from './backup.js';
 import {
   jobList,
   pushLibraryItem,
@@ -55,7 +57,7 @@ const app = express();
 app.disable('x-powered-by');
 
 const MAX_UPLOAD_BYTES = Number(process.env.MAX_UPLOAD_MB ?? 4096) * 1024 * 1024;
-const UPLOAD_PATH = /^\/api\/(library|players\/[^/]+\/upload)$/;
+const UPLOAD_PATH = /^\/api\/(library|players\/[^/]+\/upload|backup\/restore)$/;
 
 // Better Auth owns /api/auth/* — mounted before express.json() so it can
 // read request bodies itself.
@@ -604,7 +606,46 @@ app.post('/api/conductor/:cmd', async (req, res) => {
     return res.json({ ok: true, cmd, lead_ms: leadMs, results });
   }
 
-  res.status(400).json({ error: 'arm|go only' });
+  if (cmd === 'disarm') {
+    // Cancel a staged session — displays resume their normal sequence.
+    const sent = [...conductor.players].filter((id) =>
+      sendToPlayer(id, { type: 'command', cmd: 'restart' })
+    );
+    conductor.armed = false;
+    conductor.players = new Set();
+    return res.json({ ok: true, cmd, delivered: sent.length });
+  }
+
+  res.status(400).json({ error: 'arm|go|disarm only' });
+});
+
+// Backup — GET streams a tar.gz of the whole data volume (registry,
+// playlists, library, triggers, auth). Restore stages the upload under
+// data/restore-pending/; it applies on the next boot (see restore.js).
+app.get('/api/backup', async (_req, res) => {
+  try {
+    await streamBackup(res);
+  } catch (e) {
+    if (!res.headersSent) res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/backup/restore', async (req, res) => {
+  const chunks = [];
+  let size = 0;
+  for await (const c of req) {
+    size += c.length;
+    if (size > MAX_UPLOAD_BYTES) {
+      return res.status(413).json({ error: 'backup too large' });
+    }
+    chunks.push(c);
+  }
+  try {
+    const files = await stageRestore(Buffer.concat(chunks));
+    res.json({ ok: true, files, note: 'restore applies on restart' });
+  } catch (e) {
+    res.status(400).json({ error: `invalid backup: ${e.message}` });
+  }
 });
 
 app.delete('/api/players/:id', (req, res) => {

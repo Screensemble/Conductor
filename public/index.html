@@ -133,6 +133,7 @@
       <div class="big">
         <button class="arm" onclick="conduct('arm')">ARM</button>
         <button class="go" onclick="conduct('go')">GO</button>
+        <button class="arm" onclick="conduct('disarm')">DISARM</button>
       </div>
       <div class="pad row">
         <label>Release when
@@ -180,7 +181,13 @@
   </div>
 </main>
 <div id="toast"></div>
-<footer><span id="foot"></span></footer>
+<footer>
+  <span id="foot"></span>
+  <span style="margin-left:auto">
+    <a class="link" href="/api/backup">Download backup</a> ·
+    restore: POST a backup .tar.gz to /api/backup/restore, then restart
+  </span>
+</footer>
 
 <script src="/upload-toast.js"></script>
 <script src="/auth-chip.js"></script>
@@ -347,7 +354,7 @@ async function conduct(c) {
   if (r.error) toast(`${c.toUpperCase()}: ${r.error}`);
   else toast(c === "go"
     ? `GO → released ${Object.values(r.results || {}).filter(x => x.released).length} display(s)`
-    : `ARM → ${r.delivered ?? 0} display(s)`);
+    : `${c.toUpperCase()} → ${r.delivered ?? 0} display(s)`);
   setTimeout(refresh, 500);
 }
 
