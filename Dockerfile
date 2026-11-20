@@ -4,7 +4,9 @@ WORKDIR /app
 COPY package*.json ./
 # better-sqlite3 uses a prebuilt binary when one's published; the build
 # tools are a fallback for source compiles (removed in the same layer).
-RUN apk add --no-cache su-exec \
+# ffmpeg powers server-side frame extraction; the npm ffmpeg-static
+# bundle is glibc-only, so the real package is the one that works here.
+RUN apk add --no-cache su-exec ffmpeg \
  && apk add --no-cache --virtual .build-deps python3 make g++ \
  && npm ci --omit=dev \
  && apk del .build-deps
