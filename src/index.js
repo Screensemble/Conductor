@@ -154,7 +154,7 @@ app.use(async (req, res, next) => {
 });
 
 app.use(express.static('public'));
-app.use('/api/pair', pairingRouter); // accept/decline/pending — session-gated
+app.use('/api/pair', pairingRouter); // invite/pending — session-gated
 
 // -- Account ---------------------------------------------------------------
 app.get('/api/me', (req, res) => {
