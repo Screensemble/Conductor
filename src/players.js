@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
-import { config } from './config.js';
+import { tokenEquals } from './auth.js';
+import { hardwareKey } from './pairing.js';
 import { registry } from './registry.js';
 
 // Player WebSocket endpoint (/ws/player). Displays dial OUT to the server
@@ -8,7 +9,7 @@ import { registry } from './registry.js';
 // anywhere without inbound connectivity (spec sections 2 and 4).
 //
 // Inbound messages:
-//   hello           { product, version, name, pairing_id?, token? }
+//   hello           { product, version, name, hardware_id, pairing_id?, token }
 //   status          { status: {...} }
 //   command_result  { id, ok, error? }
 //   media           { id, items: [...] }
@@ -25,12 +26,29 @@ export function setPushProgressHandler(fn) {
   onPushProgress = fn;
 }
 
-// The server address as the display sees it — derived from the socket's
-// local interface, so pull_file URLs work on whichever address the
-// display originally dialed.
+// The server address as the display sees it — PUBLIC_URL when set (reverse
+// proxies), else the Host the display dialed for its WebSocket upgrade, so
+// pull_file URLs survive Docker port mapping and NAT.
 export function playerBaseUrl(id) {
-  const addr = live.get(id)?._socket?.localAddress;
-  return addr ? `http://${addr}:${config.port}` : null;
+  if (process.env.PUBLIC_URL) return process.env.PUBLIC_URL.replace(/\/+$/, '');
+  return live.get(id)?.baseUrl ?? null;
+}
+
+function baseUrlOf(req) {
+  const host = req.headers.host;
+  if (!host || !/^[a-z0-9.\-:[\]]+$/i.test(host)) return null;
+  const https =
+    req.socket.encrypted ||
+    String(req.headers['x-forwarded-proto'] ?? '').split(',')[0].trim() === 'https';
+  return `${https ? 'https' : 'http'}://${host}`;
+}
+
+function reject(ws, playerId, remote, why) {
+  ws.send(
+    JSON.stringify({ type: 'hello_ack', player_id: null, error: 'unauthorized' }),
+  );
+  try { ws.close(); } catch { /* already gone */ }
+  console.log(`player rejected (${why}): ${playerId || '?'} (${remote})`);
 }
 
 export function handlePlayerConnection(ws, req) {
@@ -46,49 +64,22 @@ export function handlePlayerConnection(ws, req) {
         ws.close();
         return;
       }
-      // Hardware-anchored identity wins — a reinstalled/reset display
-      // always rebinds to the same registry entry instead of minting a
-      // new one per connect.
-      const hw = typeof msg.hardware_id === 'string' && msg.hardware_id
-        ? `hw-${msg.hardware_id.replace(/[^a-z0-9]/gi, '').slice(0, 16)}`
-        : null;
-      playerId =
-        hw ||
-        (msg.pairing_id && registry.players.has(msg.pairing_id)
-          ? msg.pairing_id
-          : randomBytes(4).toString('hex'));
-      // A pairing-created entry migrates to the hardware-keyed id,
-      // carrying labels/pairing metadata with it.
-      if (hw && msg.pairing_id && msg.pairing_id !== playerId) {
-        const prev = registry.players.get(msg.pairing_id);
-        if (prev) {
-          const carry = {};
-          for (const k of [
-            'name', 'labels', 'paired_at', 'client_url', 'token',
-          ]) {
-            if (prev[k] !== undefined) carry[k] = prev[k];
-          }
-          registry.upsert(playerId, carry);
-          registry.remove(msg.pairing_id);
-        }
+      // Only displays paired through the QR flow are admitted: the entry
+      // must exist (keyed by hardware id, or a legacy pairing id) and the
+      // hello must carry the token issued at pairing.
+      const hw = hardwareKey(msg.hardware_id);
+      const candidate =
+        (hw && registry.players.has(hw) && hw) ||
+        (msg.pairing_id && registry.players.has(String(msg.pairing_id))
+          ? String(msg.pairing_id)
+          : null);
+      const known = candidate ? registry.players.get(candidate) : null;
+      if (!known) return reject(ws, hw, remote, 'not paired');
+      if (!known.token || !tokenEquals(msg.token, known.token)) {
+        return reject(ws, candidate, remote, 'bad token');
       }
-      // Per-device auth (TOFU): pairing already required a human confirm
-      // on the TV, so the first token a display presents binds to its
-      // registry entry and must match on every later hello. Entries
-      // predating auth get bound on their next connect the same way.
-      const known = registry.players.get(playerId);
-      if (known?.token && msg.token !== known.token) {
-        ws.send(
-          JSON.stringify({
-            type: 'hello_ack',
-            player_id: null,
-            error: 'unauthorized',
-          }),
-        );
-        try { ws.close(); } catch { /* already gone */ }
-        console.log(`player auth rejected: ${playerId} (${remote})`);
-        return;
-      }
+      playerId = candidate;
+      ws.baseUrl = baseUrlOf(req);
       // One socket per display — a re-hello replaces the stale binding.
       const prevWs = live.get(playerId);
       if (prevWs && prevWs !== ws) {
@@ -96,12 +87,10 @@ export function handlePlayerConnection(ws, req) {
       }
       live.set(playerId, ws);
       registry.upsert(playerId, {
-        name: msg.name || '',
-        client_version: msg.version || '',
-        hardware_id: hw || msg.hardware_id || '',
+        name: String(msg.name || '').slice(0, 100),
+        client_version: String(msg.version || '').slice(0, 20),
         online: true,
         last_seen: new Date().toISOString(),
-        ...(known?.token ? {} : msg.token ? { token: msg.token } : {}),
       });
       ws.send(JSON.stringify({ type: 'hello_ack', player_id: playerId }));
       console.log(`player online: ${playerId} (${msg.name || remote})`);
@@ -123,23 +112,46 @@ export function handlePlayerConnection(ws, req) {
       return;
     }
 
-    registry.upsert(playerId, {
+    registry.touch(playerId, {
       online: true,
       last_seen: new Date().toISOString(),
+      ...(msg.type === 'status' && msg.status && typeof msg.status === 'object'
+        ? { status: msg.status }
+        : {}),
     });
-    if (msg.type === 'status') {
-      registry.upsert(playerId, { status: msg.status });
-    }
   });
+
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
 
   ws.on('close', () => {
     if (!playerId) return;
     if (live.get(playerId) === ws) {
       live.delete(playerId);
-      registry.upsert(playerId, { online: false });
+      registry.touch(playerId, { online: false });
     }
     console.log(`player offline: ${playerId}`);
   });
+}
+
+// Heartbeat — terminate sockets that missed a ping so dead displays stop
+// showing as online (TCP alone can take hours to notice).
+export function startHeartbeat(wss, everyMs = 30_000) {
+  const t = setInterval(() => {
+    for (const ws of wss.clients) {
+      if (!ws.isAlive) { ws.terminate(); continue; }
+      ws.isAlive = false;
+      try { ws.ping(); } catch { /* closing */ }
+    }
+  }, everyMs);
+  t.unref?.();
+  wss.on('close', () => clearInterval(t));
+}
+
+// Drop a display's live socket (used when it's removed from the registry).
+export function disconnectPlayer(id) {
+  const ws = live.get(id);
+  if (ws) { live.delete(id); try { ws.close(); } catch { /* gone */ } }
 }
 
 export function playerOnline(id) {

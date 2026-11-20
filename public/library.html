@@ -160,6 +160,9 @@
 const $ = id => document.getElementById(id);
 const escH = s => String(s).replace(/[&<>"]/g,
   c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+// JS string argument inside a double-quoted inline handler: JSON-quote,
+// then HTML-escape (the browser decodes the attribute before parsing JS).
+const jsArg = s => escH(JSON.stringify(String(s ?? '')));
 let libItems = [], players = [], playlists = {}, selPl = null;
 let plItems = [], plPids = new Set();
 
@@ -208,9 +211,9 @@ function renderLib() {
     libItems.map(i =>
       `<tr><td><input type="checkbox" class="libsel" value="${escH(i.name)}"></td>` +
       `<td>${thumbHtml(i)}</td><td><b>${escH(i.name)}</b></td>` +
-      `<td class="muted">${i.kind}</td><td class="num">${fmtSize(i.size)}</td>` +
+      `<td class="muted">${escH(i.kind)}</td><td class="num">${fmtSize(i.size)}</td>` +
       `<td class="num"><button class="mini danger" ` +
-      `onclick="delLib('${escH(i.name).replace(/'/g, "\\'")}')">✕</button></td></tr>`
+      `onclick="delLib(${jsArg(i.name)})">✕</button></td></tr>`
     ).join('') + '</table>';
 }
 
@@ -218,7 +221,7 @@ function renderTargets() {
   $('pushTargets').innerHTML = players.length
     ? players.map(p =>
         `<label class="inline dplayer"><span class="dot${p.online ? ' on' : ''}"></span>` +
-        `<input type="checkbox" class="pushtarget" value="${p.id}">` +
+        `<input type="checkbox" class="pushtarget" value="${escH(p.id)}">` +
         `${escH(p.name || p.id)}</label>`).join('')
     : '<span class="muted">no displays online</span>';
 }
@@ -269,7 +272,7 @@ function renderPlList() {
     '<div class="pl" onclick="newPlaylist()" style="color:var(--cyan)">+ New playlist</div>' +
     names.map(n =>
       `<div class="pl${selPl === n ? ' on' : ''}" ` +
-      `onclick="selectPlaylist('${escH(n).replace(/'/g, "\\'")}')">${escH(n)}` +
+      `onclick="selectPlaylist(${jsArg(n)})">${escH(n)}` +
       `<span class="muted" style="float:right">${playlists[n].items.length}</span></div>`
     ).join('');
 }
@@ -299,7 +302,7 @@ function renderPlEditor() {
         const it = libItems.find(x => x.name === n);
         return `<div class="plitem"><span class="k">${i + 1}</span>` +
           `<span class="t">${escH(n)}</span>` +
-          `<span class="k">${it ? it.kind : 'missing'}</span>` +
+          `<span class="k">${escH(it ? it.kind : 'missing')}</span>` +
           `<button class="mini secondary" onclick="plMove(${i},-1)">↑</button>` +
           `<button class="mini secondary" onclick="plMove(${i},1)">↓</button>` +
           `<button class="mini danger" onclick="plDel(${i})">✕</button></div>`;
@@ -309,7 +312,7 @@ function renderPlEditor() {
     players.length
       ? players.map(p =>
           `<label class="inline dplayer"><span class="dot${p.online ? ' on' : ''}"></span>` +
-          `<input type="checkbox" class="plpid" value="${p.id}" ` +
+          `<input type="checkbox" class="plpid" value="${escH(p.id)}" ` +
           `${plPids.has(p.id) ? 'checked' : ''}>${escH(p.name || p.id)}</label>`
         ).join('')
       : '<span class="muted">none online</span>');
@@ -343,7 +346,7 @@ function showSync(results) {
     const bits = [];
     if (r.pushed.length) bits.push(`pushed ${r.pushed.length}`);
     if (r.pruned.length) bits.push(`removed ${r.pruned.length}`);
-    if (r.missing.length) bits.push(`missing ${r.missing.join(', ')}`);
+    if (r.missing.length) bits.push(`missing ${escH(r.missing.join(', '))}`);
     return `${escH(pid)}: ${bits.join(' · ') || 'in sync'}`;
   }).join('<br>');
 }

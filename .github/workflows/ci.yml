@@ -29,10 +29,14 @@ jobs:
 
       - name: Public assets exist
         run: |
-          for f in index.html display.html library.html pair.html upload-toast.js; do
+          for f in index.html display.html library.html pair.html users.html \
+                   login.html change-password.html upload-toast.js auth-chip.js; do
             [ -f "public/$f" ] || { echo "missing public/$f"; exit 1; }
           done
           echo "public assets OK"
+
+      - name: Smoke tests
+        run: npm test
 
       - name: Docker build (no push)
         run: docker build .

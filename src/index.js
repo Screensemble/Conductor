@@ -16,27 +16,28 @@ import { config } from './config.js';
 import { triggerRouter } from './triggers.js';
 import { pairingPublicRouter, pairingRouter } from './pairing.js';
 import {
+  disconnectPlayer,
   handlePlayerConnection,
   livePlayerIds,
   playerOnline,
   requestFromPlayer,
   sendToPlayer,
+  startHeartbeat,
 } from './players.js';
 import { registry } from './registry.js';
 import {
   jobList,
   pushLibraryItem,
-  pushToPlayer,
   serveStaged,
 } from './uploads.js';
 import {
-  cleanName,
   deleteItem,
   hasItem,
   itemPath,
   listItems,
-  saveItem,
+  saveStream,
   serveItem,
+  validName,
 } from './library.js';
 import {
   deletePlaylist,
@@ -45,14 +46,26 @@ import {
   syncPlaylist,
 } from './playlists.js';
 import { statSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 const app = express();
+app.disable('x-powered-by');
+
+const MAX_UPLOAD_BYTES = Number(process.env.MAX_UPLOAD_MB ?? 4096) * 1024 * 1024;
+const UPLOAD_PATH = /^\/api\/(library|players\/[^/]+\/upload)$/;
 
 // Better Auth owns /api/auth/* — mounted before express.json() so it can
 // read request bodies itself.
 app.all('/api/auth/*', toNodeHandler(auth));
 
-app.use(express.json());
+// Upload routes stream the raw body to disk themselves — keep the JSON
+// parser off them regardless of the client's Content-Type.
+const jsonBody = express.json({ limit: '1mb' });
+app.use((req, res, next) =>
+  req.method === 'POST' && UPLOAD_PATH.test(req.path)
+    ? next()
+    : jsonBody(req, res, next),
+);
 
 // -- Open endpoints (no session) -------------------------------------------
 app.get('/api/health', (_req, res) => {
@@ -82,7 +95,7 @@ app.get('/api/library/file/:name', async (req, res) => {
   if (!(await fileAllowed(req))) {
     return res.status(401).json({ error: 'authentication required' });
   }
-  serveItem(req.params.name, res);
+  serveItem(validName(req.params.name), res);
 });
 
 app.get('/api/uploads/file/:fileId', async (req, res) => {
@@ -141,8 +154,9 @@ app.use(async (req, res, next) => {
   next();
 });
 
-app.use(express.static('public'));
-app.use('/api/pair', pairingRouter); // accept/decline/pending — session-gated
+// Resolved from the module, not the cwd — data/ is cwd-relative, pages aren't.
+app.use(express.static(fileURLToPath(new URL('../public', import.meta.url))));
+app.use('/api/pair', pairingRouter); // invite/pending — session-gated
 
 // -- Account ---------------------------------------------------------------
 app.get('/api/me', (req, res) => {
@@ -265,19 +279,18 @@ app.post('/api/users/:id/password', requireAdmin, async (req, res) => {
 // -- Fleet view ----------------------------------------------------------
 // Displays hold a persistent WebSocket to /ws/player — "online" is simply
 // whether that socket is live; status arrives pushed every few seconds.
+// Device tokens never leave the server through the dashboard API.
+const publicPlayer = ({ token, ...p }) => ({ ...p, online: playerOnline(p.id) });
+
 app.get('/api/players', (_req, res) => {
-  res.json({
-    players: registry
-      .list()
-      .map((p) => ({ ...p, online: playerOnline(p.id) })),
-  });
+  res.json({ players: registry.list().map(publicPlayer) });
 });
 
 // Single display detail — registry record + live status + online flag.
 app.get('/api/players/:id', (req, res) => {
   const p = registry.players.get(req.params.id);
   if (!p) return res.status(404).json({ error: 'unknown player' });
-  res.json({ ...p, online: playerOnline(p.id) });
+  res.json(publicPlayer(p));
 });
 
 app.post('/api/players/:id/labels', (req, res) => {
@@ -287,7 +300,10 @@ app.post('/api/players/:id/labels', (req, res) => {
   if (!Array.isArray(labels)) {
     return res.status(400).json({ error: 'labels must be an array' });
   }
-  res.json({ player: registry.upsert(p.id, { labels: labels.map(String) }) });
+  const player = registry.upsert(p.id, {
+    labels: labels.slice(0, 20).map((l) => String(l).slice(0, 40)),
+  });
+  res.json({ player: publicPlayer(player) });
 });
 
 app.post('/api/players/:id/command', async (req, res) => {
@@ -329,9 +345,9 @@ app.post('/api/players/:id/media/:op', async (req, res) => {
   if (!p) return res.status(404).json({ error: 'unknown player' });
   try {
     const reply = await requestFromPlayer(req.params.id, {
+      ...(req.body || {}),
       type: 'media_op',
       op: req.params.op,
-      ...(req.body || {}),
     });
     res.status(reply.ok ? 200 : 400).json(reply);
   } catch (e) {
@@ -399,18 +415,31 @@ app.get('/api/players/:id/file/:name', async (req, res) => {
 // Content push — the browser uploads to the server, the file is stored
 // in the library, and the display pulls it back over HTTP. Progress
 // lands in the job queue below.
-app.post(
-  '/api/players/:id/upload',
-  express.raw({ type: () => true, limit: '4gb' }),
-  (req, res) => {
-    const p = registry.players.get(req.params.id);
-    if (!p) return res.status(404).json({ error: 'unknown player' });
-    const name = cleanName(req.query.name || 'file.bin');
-    saveItem(name, req.body);   // the library keeps a copy for re-push
-    const job = pushLibraryItem(req.params.id, name, req.body.length);
-    res.status(job.state === 'error' ? 502 : 202).json({ job });
-  },
-);
+async function receiveUpload(req, res) {
+  const name = validName(req.query.name);
+  if (!name) {
+    res.status(400).json({ error: 'unsupported file name or type' });
+    return null;
+  }
+  try {
+    const { size } = await saveStream(name, req, MAX_UPLOAD_BYTES);
+    return { name, size };
+  } catch (e) {
+    if (!res.headersSent) {
+      res.status(e.status || 500).json({ error: e.message || 'upload failed' });
+    }
+    return null;
+  }
+}
+
+app.post('/api/players/:id/upload', async (req, res) => {
+  const p = registry.players.get(req.params.id);
+  if (!p) return res.status(404).json({ error: 'unknown player' });
+  const got = await receiveUpload(req, res);
+  if (!got) return;
+  const job = pushLibraryItem(req.params.id, got.name, got.size);
+  res.status(job.state === 'error' ? 502 : 202).json({ job });
+});
 
 // -- Media library ---------------------------------------------------------
 // Permanent server-side store shared across displays and playlists.
@@ -419,18 +448,13 @@ app.get('/api/library', (_req, res) => {
   res.json({ items: listItems() });
 });
 
-app.post(
-  '/api/library',
-  express.raw({ type: () => true, limit: '4gb' }),
-  (req, res) => {
-    const name = cleanName(req.query.name || 'file.bin');
-    saveItem(name, req.body);
-    res.status(201).json({ ok: true, name });
-  },
-);
+app.post('/api/library', async (req, res) => {
+  const got = await receiveUpload(req, res);
+  if (got) res.status(201).json({ ok: true, name: got.name });
+});
 
 app.delete('/api/library/:name', (req, res) => {
-  const name = cleanName(req.params.name);
+  const name = validName(req.params.name);
   if (!hasItem(name)) return res.status(404).json({ error: 'not found' });
   deleteItem(name);
   res.json({ ok: true });
@@ -440,7 +464,7 @@ app.delete('/api/library/:name', (req, res) => {
 
 // Copy a library item to one or more displays.
 app.post('/api/library/:name/push', (req, res) => {
-  const name = cleanName(req.params.name);
+  const name = validName(req.params.name);
   if (!hasItem(name)) return res.status(404).json({ error: 'not found' });
   const players = Array.isArray(req.body?.players) ? req.body.players : [];
   const size = statSync(itemPath(name)).size;
@@ -457,7 +481,9 @@ app.get('/api/playlists', (_req, res) => {
 
 app.post('/api/playlists/:name', async (req, res) => {
   const name = String(req.params.name || '').trim();
-  if (!name) return res.status(400).json({ error: 'name required' });
+  if (!name || name.length > 100) {
+    return res.status(400).json({ error: 'name required (max 100 chars)' });
+  }
   const pl = putPlaylist(name, req.body || {});
   const results = pl.players.length ? await syncPlaylist(name) : {};
   res.json({ playlist: pl, sync: results });
@@ -480,8 +506,6 @@ app.get('/api/uploads', (_req, res) => {
 });
 
 // Conductor — broadcast arm/go to every connected display. Arm stages
-
-// Conductor — broadcast arm/go to every connected display. Arm stages
 // item 0 (videos paused on frame one, images shown); go releases all of
 // them at once for synchronized starts.
 app.post('/api/conductor/:cmd', (req, res) => {
@@ -499,12 +523,26 @@ app.delete('/api/players/:id', (req, res) => {
   if (!registry.remove(req.params.id)) {
     return res.status(404).json({ error: 'unknown player' });
   }
+  disconnectPlayer(req.params.id);
   res.json({ ok: true });
 });
 
 const server = createServer(app);
-const wss = new WebSocketServer({ server, path: '/ws/player' });
+// 16 MB covers the largest display reply (8 MB thumbnail proxy, base64).
+const wss = new WebSocketServer({
+  server,
+  path: '/ws/player',
+  maxPayload: 16 * 1024 * 1024,
+});
 wss.on('connection', handlePlayerConnection);
+startHeartbeat(wss);
+
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, () => {
+    registry.flush();
+    process.exit(0);
+  });
+}
 
 await seedDefaultUser();
 

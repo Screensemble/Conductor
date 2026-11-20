@@ -88,6 +88,9 @@
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g,
   c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+// JS string argument inside a double-quoted inline handler: JSON-quote,
+// then HTML-escape (the browser decodes the attribute before parsing JS).
+const jsArg = s => esc(JSON.stringify(String(s ?? "")));
 const msg = (m, ok) => { const e = $('msg'); e.textContent = m || ''; e.className = 'msg ' + (ok ? 'ok' : 'err'); };
 
 async function load() {
@@ -104,8 +107,8 @@ async function load() {
       <td><span class="badge ${esc(u.role)}">${esc(u.role)}</span></td>
       <td>${u.must_change_password ? '<span class="badge flag">change required</span>' : '<span class="dimtxt">set</span>'}</td>
       <td class="rowbtns" style="text-align:right;white-space:nowrap">
-        <button class="btn dim" onclick="resetPw('${esc(u.id)}','${esc(u.username || u.name)}')">reset</button>
-        <button class="btn danger" onclick="delUser('${esc(u.id)}','${esc(u.username || u.name)}')">delete</button>
+        <button class="btn dim" onclick="resetPw(${jsArg(u.id)},${jsArg(u.username || u.name)})">reset</button>
+        <button class="btn danger" onclick="delUser(${jsArg(u.id)},${jsArg(u.username || u.name)})">delete</button>
       </td>
     </tr>`).join('') || '<tr><td colspan="4" class="dimtxt">none</td></tr>';
 }
@@ -128,7 +131,7 @@ $('add').onsubmit = async e => {
 
 window.delUser = async (id, name) => {
   if (!confirm(`Delete user "${name}"?`)) return;
-  const r = await fetch(`/api/users/${id}`, { method: 'DELETE' });
+  const r = await fetch(`/api/users/${encodeURIComponent(id)}`, { method: 'DELETE' });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) { msg(j.error || 'Could not delete'); return; }
   msg('User deleted.', true); load();
@@ -137,7 +140,7 @@ window.delUser = async (id, name) => {
 window.resetPw = async (id, name) => {
   const pw = prompt(`New temporary password for "${name}" (min 8 chars):`);
   if (!pw) return;
-  const r = await fetch(`/api/users/${id}/password`, {
+  const r = await fetch(`/api/users/${encodeURIComponent(id)}/password`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ password: pw }),
   });

@@ -267,7 +267,7 @@ async function refresh() {
       if (m.items) {
         mediaItems = m.items; renderMedia();
       } else {
-        $('activeList').innerHTML = '<div class="empty">' + (m.error || 'unavailable') + '</div>';
+        $('activeList').innerHTML = '<div class="empty">' + escH(m.error || 'unavailable') + '</div>';
       }
     } catch (e) {}
   }
@@ -290,19 +290,21 @@ function schedSummary(s) {
 const byName = n => mediaItems.find(i => i.name === n);
 const escH = s => String(s).replace(/[&<>"]/g,
   c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const escJ = s => String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+// JS string argument inside a double-quoted inline handler: JSON-quote,
+// then HTML-escape (the browser decodes the attribute before parsing JS).
+const escJ = s => escH(JSON.stringify(String(s ?? '')));
 
 function rowHtml(i, draggable) {
   const n = escJ(i.name);
   const badges =
     (i.playing ? '<span class="badge play">playing</span>' : '') +
     (i.remote ? '<span class="badge gray">url</span>' : '') +
-    (i.schedule ? '<span class="badge gray">' + schedSummary(i.schedule) + '</span>' : '') +
+    (i.schedule ? '<span class="badge gray">' + escH(schedSummary(i.schedule)) + '</span>' : '') +
     (i.enabled && i.active === false
       ? '<span class="badge gray">scheduled off</span>' : '');
   const durCell = i.kind === 'image'
-    ? `<input class="dur" type="number" min="1" value="${i.duration || ''}" placeholder="10"
-       title="seconds (empty = 10)" onchange="setDuration('${n}', this.value)">`
+    ? `<input class="dur" type="number" min="1" value="${escH(i.duration || '')}" placeholder="10"
+       title="seconds (empty = 10)" onchange="setDuration(${n}, this.value)">`
     : '—';
   const sizeCell = i.size ? (i.size / 1048576).toFixed(1) + ' MB' : '—';
   const editRow = editName === i.name ? `<tr class="editrow"><td colspan="7">${editHtml(i)}</td></tr>` : '';
@@ -311,17 +313,17 @@ function rowHtml(i, draggable) {
     `<td class="handle">${draggable ? '⋮⋮' : ''}</td>` +
     `<td>${thumbHtml(i)}</td>` +
     `<td><b>${escH(i.name)}</b>${badges}` +
-    `<div class="muted" style="font-size:12px">${i.kind}</div></td>` +
+    `<div class="muted" style="font-size:12px">${escH(i.kind)}</div></td>` +
     `<td class="num">${sizeCell}</td>` +
     `<td class="num">${durCell}</td>` +
     `<td><input type="checkbox" ${i.enabled ? 'checked' : ''}
-      onchange="toggleItem('${n}', this.checked)"></td>` +
+      onchange="toggleItem(${n}, this.checked)"></td>` +
     `<td class="num">` +
-    `<button class="mini secondary" title="play now" onclick="playItem('${n}')">▶</button> ` +
-    `<button class="mini secondary" title="edit" onclick="toggleEdit('${n}')">✎</button> ` +
-    `<button class="mini secondary" title="move up" onclick="moveItem('${n}',-1)">↑</button> ` +
-    `<button class="mini secondary" title="move down" onclick="moveItem('${n}',1)">↓</button> ` +
-    `<button class="mini danger" title="delete" onclick="delItem('${n}')">✕</button></td></tr>` +
+    `<button class="mini secondary" title="play now" onclick="playItem(${n})">▶</button> ` +
+    `<button class="mini secondary" title="edit" onclick="toggleEdit(${n})">✎</button> ` +
+    `<button class="mini secondary" title="move up" onclick="moveItem(${n},-1)">↑</button> ` +
+    `<button class="mini secondary" title="move down" onclick="moveItem(${n},1)">↓</button> ` +
+    `<button class="mini danger" title="delete" onclick="delItem(${n})">✕</button></td></tr>` +
     editRow;
 }
 
@@ -353,17 +355,17 @@ function editHtml(i) {
     `<div class="row">` +
     (i.kind === 'image'
       ? `<label>Seconds on screen <input type="number" id="eDur" min="1"
-         value="${i.duration || ''}" placeholder="10" style="width:90px"></label>`
+         value="${escH(i.duration || '')}" placeholder="10" style="width:90px"></label>`
       : '') +
-    `<label>From date <input type="date" id="sStart" value="${s.start || ''}"></label>` +
-    `<label>To date <input type="date" id="sEnd" value="${s.end || ''}"></label>` +
-    `<label>Time from <input type="time" id="sFrom" value="${s.from || ''}"></label>` +
-    `<label>Time to <input type="time" id="sTo" value="${s.to || ''}"></label>` +
+    `<label>From date <input type="date" id="sStart" value="${escH(s.start || '')}"></label>` +
+    `<label>To date <input type="date" id="sEnd" value="${escH(s.end || '')}"></label>` +
+    `<label>Time from <input type="time" id="sFrom" value="${escH(s.from || '')}"></label>` +
+    `<label>Time to <input type="time" id="sTo" value="${escH(s.to || '')}"></label>` +
     `</div>` +
     `<div class="row">${dayBoxes}</div>` +
     `<p class="muted">Empty = unconstrained. A "to" earlier than "from" wraps midnight.</p>` +
-    `<div class="row"><button onclick="saveEdit('${escJ(i.name)}')">Save</button>` +
-    `<button class="secondary" onclick="saveEdit('${escJ(i.name)}', true)">Clear schedule</button>` +
+    `<div class="row"><button onclick="saveEdit(${escJ(i.name)})">Save</button>` +
+    `<button class="secondary" onclick="saveEdit(${escJ(i.name)}, true)">Clear schedule</button>` +
     `<button class="secondary" onclick="toggleEdit()">Close</button></div>`;
 }
 

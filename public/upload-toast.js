@@ -49,6 +49,9 @@
     'stroke-linecap="round"><path d="M12 8v6"/><circle cx="12" cy="17.5" ' +
     'r=".5" fill="#fff"/></svg>';
 
+  const esc = (s) => String(s ?? '').replace(/[&<>"]/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
   const fmt = (b) =>
     b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB'
                  : Math.max(1, Math.round(b / 1024)) + ' KB';
@@ -85,7 +88,7 @@
         `<div>${active.length} file${active.length > 1 ? 's' : ''} — ` +
         `${fmt(got)} of ${fmt(tot)}</div>` +
         `<div class="bar"><i style="width:${pct}%"></i></div>` +
-        `<div class="sub">${active.map((j) => j.name).join(' · ')}</div>` +
+        `<div class="sub">${active.map((j) => esc(j.name)).join(' · ')}</div>` +
         (errors.length
           ? `<div class="err">${errors.length} transfer(s) failed</div>`
           : '');
@@ -95,7 +98,7 @@
         `style="background:linear-gradient(180deg,#c0392b,#8c2f39)">` +
         `${ICON_ERR}</div><div class="t">Upload failed</div></div>` +
         errors
-          .map((j) => `<div class="err">${j.name}: ${j.error}</div>`)
+          .map((j) => `<div class="err">${esc(j.name)}: ${esc(j.error)}</div>`)
           .join('');
     }
     el.innerHTML = `<div class="accent"></div><div class="body">${body}</div>`;
