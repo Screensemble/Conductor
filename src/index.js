@@ -1,5 +1,7 @@
 import './restore.js'; // boot-time restore swap — must precede data modules
 import { createServer } from 'node:http';
+import { createServer as createSecureServer } from 'node:https';
+import { readFileSync as readFile } from 'node:fs';
 import express from 'express';
 import { WebSocketServer } from 'ws';
 import { toNodeHandler, fromNodeHeaders } from 'better-auth/node';
@@ -30,6 +32,7 @@ import {
 } from './players.js';
 import { registry } from './registry.js';
 import { stageRestore, streamBackup } from './backup.js';
+import { repoZip, serveRepoFile } from './repo.js';
 import {
   jobList,
   pushLibraryItem,
@@ -119,6 +122,18 @@ app.use('/api/triggers', async (req, res, next) => {
   res.status(401).json({ error: 'trigger authentication required' });
 });
 app.use('/api/triggers', triggerRouter);
+
+// On-server addon repository — token-gated file pulls + a per-display
+// repository.screensemble installer so displays update with no internet.
+app.get(['/repo', '/repo/:file'], serveRepoFile);
+app.get('/api/players/:id/repo.zip', (req, res) => {
+  const zip = repoZip(req.params.id);
+  if (!zip) return res.status(404).json({ error: 'display offline or unknown' });
+  res.type('application/zip');
+  res.setHeader('content-disposition',
+    'attachment; filename="repository.screensemble-1.0.0.zip"');
+  res.send(zip);
+});
 
 // -- Session guard ----------------------------------------------------------
 // Everything below requires a logged-in user. Assets the login and
@@ -656,7 +671,18 @@ app.delete('/api/players/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-const server = createServer(app);
+// TLS is opt-in: set TLS_CERT + TLS_KEY and both HTTP and the player
+// socket become https/wss. Displays just dial wss://; set the display's
+// tls_insecure for self-signed LAN certs.
+const server = process.env.TLS_CERT && process.env.TLS_KEY
+  ? createSecureServer(
+      {
+        cert: readFile(process.env.TLS_CERT),
+        key: readFile(process.env.TLS_KEY),
+      },
+      app,
+    )
+  : createServer(app);
 // 16 MB covers the largest display reply (8 MB thumbnail proxy, base64).
 const wss = new WebSocketServer({
   server,

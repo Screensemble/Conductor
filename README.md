@@ -58,6 +58,12 @@ The dashboard and admin APIs require sign-in ([Better Auth](https://better-auth.
 | `AUTH_SECRET` | Session secret (auto-generated & persisted if unset) |
 | `AUTH_DEFAULT_USER` / `AUTH_DEFAULT_PASSWORD` | Seed credentials (defaults `screensemble`/`screensemble`, forced change on first login) |
 | `TRIGGER_TOKEN` | Optional shared bearer token for hardware triggers |
+| `TLS_CERT` / `TLS_KEY` | Serve HTTPS + `wss://` when both are set |
+| `MAX_UPLOAD_MB` | Upload/restore size cap (default 4096) |
+
+The server also hosts an addon repo for internet-free player updates —
+drop release repo files into `data/repo/` and install each display's
+`repo.zip` from its admin page (see Deployment docs).
 
 ## How it works
 

@@ -198,6 +198,15 @@
       <p class="muted">Commands travel over the display's live socket —
         works from anywhere, no inbound access needed.</p>
     </div>
+    <h2>Addon updates</h2>
+    <div class="panel">
+      <p class="muted">
+        <a class="link" id="repoLink" href="#">Download the update-repo installer</a>
+        — install this zip on the display once and it will fetch addon
+        updates straight from this server (no internet needed). Refresh
+        the server's <code>data/repo/</code> folder with each release.
+      </p>
+    </div>
   </section>
 </main>
 <footer>
@@ -211,6 +220,7 @@ const $ = id => document.getElementById(id);
 const PID = new URLSearchParams(location.search).get('id');
 if (!PID) location.replace('/');
 const API = '/api/players/' + encodeURIComponent(PID);
+$('repoLink').href = API + '/repo.zip';
 let settings = {};
 let mediaItems = [];
 let dragName = null;
