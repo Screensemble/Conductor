@@ -19,6 +19,13 @@ import { basename, extname, join } from 'node:path';
 // file URL doubles as the pull target.
 const DIR = join(process.cwd(), 'data', 'library');
 
+// Uploads cut off by a restart leave their temp file behind; clear them.
+try {
+  for (const f of readdirSync(DIR)) {
+    if (/^\.up-[0-9a-f]+\.part$/.test(f)) unlinkSync(join(DIR, f));
+  }
+} catch { /* no library yet */ }
+
 const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp']);
 const VIDEO_EXTS = new Set([
   '.mp4', '.mkv', '.avi', '.mov', '.m4v', '.webm', '.mpg', '.mpeg',
