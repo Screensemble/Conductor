@@ -129,5 +129,7 @@ export function serveStaged(fileId, res) {
   }
   res.setHeader('Content-Type', 'application/octet-stream');
   res.setHeader('Content-Length', statSync(f.path).size);
-  createReadStream(f.path).pipe(res);
+  createReadStream(f.path)
+    .on('error', () => res.destroy())
+    .pipe(res);
 }

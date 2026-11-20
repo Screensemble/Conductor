@@ -15,9 +15,9 @@ Self-hosted server for the Screensemble synchronized multi-display signage syste
 
 - `src/index.js` — entry point: HTTP server, dashboard + API routes, WebSocket server.
 - `src/config.js` — env-driven configuration (port, host, server role, min client version).
-- `src/players.js` — player WebSocket handler at `/ws/player`: hello/status/commands, request/response matching, per-device token auth (first-come binding).
+- `src/players.js` — player WebSocket handler at `/ws/player`: hello/status/commands, request/response matching, per-device token auth (only QR-paired displays with their issued token are admitted).
 - `src/registry.js` — persistent player registry (`data/players.json`).
-- `src/pairing.js` — `/api/pair/{request,accept,decline}` enrollment flow with on-TV confirm.
+- `src/pairing.js` — `/api/pair/{invite,request,accept,decline}` enrollment: dashboard-issued single-use code, on-TV confirm, server-issued device token.
 - `src/uploads.js` — upload queue: staged + library pushes via `pull_file` with progress jobs.
 - `src/library.js` — persistent server-side media library (`data/library/`): inventory, serving, sha256.
 - `src/playlists.js` — shared playlists (`data/playlists.json`): named ordered groups assigned to displays, sync orchestration (push missing, apply order, optional prune).

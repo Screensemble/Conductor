@@ -26,9 +26,10 @@ Designed to run fully offline on an isolated show network. No cloud account, no 
 - **Media library** - every upload keeps a server-side copy, reusable across any display. Browse, push, delete.
 - **Shared playlists** - named ordered groups assigned to displays. Sync pushes missing files, applies order, and can prune extras for an exact match — one playlist, any number of displays converging on it.
 - **Upload queue** - browser uploads and library pushes ride a `pull_file` handshake: the display downloads over HTTP with per-file progress and SHA-256 verification. Still outbound-only.
-- **Pairing** - version-gated enrollment on both sides, then an on-TV confirm before a display registers.
+- **Pairing** - a signed-in user issues a single-use pairing code, the display presents it (via QR scan or its phone setup page), and the human confirms on the TV. Only displays paired this way can connect.
 - **Deferred updates** - content changes queue on the display and apply at the next natural item boundary; pushes settle before flagging. Nothing cuts mid-play.
-- **Per-device auth** - pairing stores a token; every hello is verified against it. Displays mint one automatically when configured manually.
+- **Per-device auth** - the server issues each display a random token at pairing; every connection and media pull is verified against it. Unpaired or mismatched displays are rejected.
+- **Accounts** - sign-in required for the dashboard and API. No public sign-up: admins create users, and new users set their own password at first login.
 - **Conductor (in progress)** - arm/go staging for synchronized multi-display performances.
 
 ## Quick start
@@ -40,13 +41,13 @@ docker run -p 8090:8080 -v screensemble-data:/app/data \
 npm ci && PORT=8090 npm start
 ```
 
-Open `http://<host>:8090/` — fleet list, per-display admin, media library, shared playlists, pairing.
+Open `http://<host>:8090/` and sign in as `screensemble` / `screensemble` — you must change the password at first login (or preset `AUTH_DEFAULT_USER` / `AUTH_DEFAULT_PASSWORD`). Then: fleet list, per-display admin, media library, shared playlists, pairing.
 
 Requirements: Node.js >= 20 or Docker. Registry, playlists, library, and staged uploads all live in the `data` volume at `/app/data` — backup is copying it.
 
 ## How it works
 
-1. **Pair displays** - open the player's setup QR on a phone (or the server's pair page), confirm on the TV. The display registers and dials out.
+1. **Pair displays** - open the server's Pair page (it shows a one-time code), scan the display's setup QR, and confirm on the TV. The display gets its token and dials out.
 2. **Feed the library** - upload media to the server's library; it stays there permanently, reusable for any display.
 3. **Compose playlists** - order library items, assign displays, sync. Missing files push themselves; extras can be pruned for an exact match.
 4. **Displays stay intentional** - every display keeps playing cached content through server restarts and network drops, and picks changes up at the next item boundary.
@@ -58,8 +59,24 @@ Requirements: Node.js >= 20 or Docker. Registry, playlists, library, and staged 
 | `PORT` | `8080` | HTTP + WebSocket port |
 | `HOST` | `0.0.0.0` | Bind address |
 | `SERVER_ROLE` | `manager` | `manager` or `controller` |
+| `SERVER_NAME` / `SERVER_OWNER` / `SERVER_INFO` | `Screensemble Server` / empty | Identity shown on the TV during pairing |
+| `MIN_CLIENT_VERSION` | `0.0.0` | Refuse pairing from older display addons |
+| `PUBLIC_URL` | — | Base URL displays use to download media (set behind a reverse proxy); defaults to the host the display connected to |
+| `AUTH_DEFAULT_USER` / `AUTH_DEFAULT_PASSWORD` | `screensemble` / `screensemble` | First-boot admin (change forced at first login) |
+| `AUTH_SECRET` | generated into `data/auth_secret` | Session signing secret |
+| `BETTER_AUTH_URL` | — | Public dashboard URL (optional; silences the base-URL warning) |
+| `TRIGGER_TOKEN` | — | Shared bearer token for hardware triggers |
+| `MAX_UPLOAD_MB` | `4096` | Largest accepted media upload |
+
+## Security notes
+
+- Put the server behind HTTPS (reverse proxy) when it is reachable beyond an isolated show network; displays then use `wss://`.
+- Device tokens appear in media pull URLs, so prefer HTTPS on untrusted networks.
+- The container runs as the unprivileged `node` user and ships a `HEALTHCHECK` on `/api/health`.
 
 ## Development
+
+Run `npm test` for the end-to-end smoke tests (auth, pairing, display admission, file routes).
 
 ```sh
 npm ci

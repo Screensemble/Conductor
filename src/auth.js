@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { betterAuth } from 'better-auth';
 import { username } from 'better-auth/plugins';
@@ -48,7 +48,8 @@ export const auth = betterAuth({
   // so CSRF is already covered — disabling the Fetch-Metadata check lets
   // non-browser clients (curl, scripts, agents) call auth endpoints too.
   advanced: { disableCSRFCheck: true },
-  emailAndPassword: { enabled: true },
+  // No self-registration — admins create accounts (POST /api/users).
+  emailAndPassword: { enabled: true, disableSignUp: true },
   plugins: [username(), admin()],
   rateLimit: { enabled: true },
   user: {
@@ -74,21 +75,19 @@ export async function seedDefaultUser() {
   await runMigrations();
   const row = authDb.prepare('SELECT COUNT(*) AS n FROM user').get();
   if (row.n > 0) return;
-  const res = await auth.api.signUpEmail({
+  // Server-side createUser (no request headers) bypasses the admin-session
+  // check and works with public sign-up disabled.
+  const res = await auth.api.createUser({
     body: {
       email: `${DEFAULT_USER}@screensemble.local`,
       password: DEFAULT_PASS,
       name: DEFAULT_USER,
+      role: 'admin',
+      data: { username: DEFAULT_USER, displayUsername: DEFAULT_USER },
     },
   });
   const id = res?.user?.id;
   if (!id) return;
-  authDb
-    .prepare(
-      `UPDATE user SET username = ?, displayUsername = ?, role = 'admin'
-       WHERE id = ?`,
-    )
-    .run(DEFAULT_USER, DEFAULT_USER, id);
   authDb
     .prepare('INSERT OR REPLACE INTO users_meta (user_id, must_change_password) VALUES (?, 1)')
     .run(id);
@@ -126,17 +125,29 @@ export async function sessionOf(req) {
   }
 }
 
+// Constant-time string compare — token checks must not leak prefix
+// matches through response timing.
+export function tokenEquals(a, b) {
+  const x = Buffer.from(String(a ?? ''));
+  const y = Buffer.from(String(b ?? ''));
+  return x.length > 0 && x.length === y.length && timingSafeEqual(x, y);
+}
+
+function playerTokenOk(tok) {
+  if (!tok) return false;
+  let ok = false;
+  for (const p of registry.players.values()) {
+    if (p.token && tokenEquals(p.token, tok)) ok = true;
+  }
+  return ok;
+}
+
 // File-pull authorization: displays fetch media over plain HTTP using the
-// per-device pairing token the server embeds in the pull URL. Logged-in
+// per-device token issued at pairing, embedded in the pull URL. Logged-in
 // dashboard users may also fetch (thumbnails/previews).
 export async function fileAllowed(req) {
   const t = String(req.query.token ?? '');
-  if (t) {
-    for (const p of registry.players.values()) {
-      if (p.token && p.token === t) return true;
-    }
-    return false;
-  }
+  if (t) return playerTokenOk(t);
   return !!(await sessionOf(req));
 }
 
@@ -146,9 +157,8 @@ export function triggerTokenOk(req) {
   const h = String(req.headers.authorization ?? '');
   const bearer = h.startsWith('Bearer ') ? h.slice(7) : '';
   const tok = bearer || String(req.query.token ?? '');
-  if (process.env.TRIGGER_TOKEN && tok === process.env.TRIGGER_TOKEN) return true;
-  for (const p of registry.players.values()) {
-    if (p.token && p.token === tok) return true;
+  if (process.env.TRIGGER_TOKEN && tokenEquals(tok, process.env.TRIGGER_TOKEN)) {
+    return true;
   }
-  return false;
+  return playerTokenOk(tok);
 }
