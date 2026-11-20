@@ -15,11 +15,12 @@ import { hasItem, itemPath } from './library.js';
 // (tracked as upload jobs), applies the play order, and optionally
 // removes items that aren't in the list.
 const FILE = join(process.cwd(), 'data', 'playlists.json');
-let playlists = {};
+// Null-prototype map so names like "__proto__" are ordinary keys.
+let playlists = Object.create(null);
 try {
-  playlists = JSON.parse(readFileSync(FILE, 'utf8'));
+  Object.assign(playlists, JSON.parse(readFileSync(FILE, 'utf8')));
 } catch {
-  playlists = {};
+  /* first run */
 }
 
 function save() {
@@ -33,8 +34,8 @@ export function listPlaylists() {
 
 export function putPlaylist(name, data) {
   playlists[name] = {
-    items: (data.items || []).map(String),
-    players: (data.players || []).map(String),
+    items: (Array.isArray(data.items) ? data.items : []).map(String),
+    players: (Array.isArray(data.players) ? data.players : []).map(String),
     updated: Date.now(),
   };
   save();

@@ -39,6 +39,8 @@
   .hint { font-size: 12px; color: #556570; margin-top: 4px; }
   .hidden { display: none; }
   code { color: var(--cyan); }
+  .code { font: 700 28px/1.2 ui-monospace, monospace; letter-spacing: 3px;
+          color: var(--cyan); padding: 10px 0; }
 </style>
 </head>
 <body>
@@ -55,15 +57,29 @@
 const $ = id => document.getElementById(id);
 let client = null;   // { base, token } parsed from the scanned QR
 let stream = null;
+let inviteCode = ""; // single-use pairing code from POST /api/pair/invite
+const esc = s => String(s ?? "").replace(/[&<>"]/g,
+  c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+async function getInvite() {
+  const r = await fetch("/api/pair/invite", { method: "POST" });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.code) throw new Error(j.error || "could not create a pairing code");
+  inviteCode = j.code;
+}
+const fmtCode = c => c.slice(0, 4) + "-" + c.slice(4);
 
 function showError(msg) { $("err").textContent = msg || ""; }
 
-function stepServer() {
+async function stepServer() {
+  try { await getInvite(); } catch (e) { showError(e.message); return; }
   $("body").innerHTML = `
     <label>This server's address (as the display should reach it)</label>
-    <input id="server_url" value="${location.host}">
-    <label>Auth token (optional)</label>
-    <input id="auth" type="password" placeholder="leave empty if none">
+    <input id="server_url" value="${esc(location.host)}">
+    <label>Pairing code (single use, valid 10 minutes)</label>
+    <div class="code" id="code">${esc(fmtCode(inviteCode))}</div>
+    <div class="hint">Using the display's phone setup page instead? Enter
+      this server address and code there.</div>
     <button onclick="stepScan()">Scan display QR code</button>
     <button class="ghost" onclick="stepManual()">Enter QR contents manually</button>
     <div class="hint">Camera scanning needs Chrome/Edge (BarcodeDetector).</div>`;
@@ -131,13 +147,13 @@ function onScan(raw) {
   client = { base: u.origin, token };
 
   const s = encodeURIComponent($("server_url") ? $("server_url").value : location.host);
-  const a = encodeURIComponent($("auth") ? $("auth").value : "");
+  const a = encodeURIComponent(inviteCode);
   // New tab hits the display's /pair endpoint and closes itself — no CORS.
   // s= can be any URL, so a cloud-hosted server works the same way.
   window.open(`${client.base}/pair?s=${s}&a=${a}&t=${encodeURIComponent(client.token)}`, "_blank");
 
   $("title").textContent = "Confirm on the display";
-  $("desc").innerHTML = `The display at <code>${client.base}</code> is now
+  $("desc").innerHTML = `The display at <code>${esc(client.base)}</code> is now
     asking whether to accept this server. Press <b>Pair</b> on the display's
     remote to finish — this page returns to the dashboard when it does.`;
   $("body").innerHTML = `

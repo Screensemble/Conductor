@@ -148,8 +148,9 @@
       <h2>Pair a display</h2>
       <div class="pad">
         <p>Open the <a class="link" href="/pair.html">pairing page</a> on a
-        phone (or the display's own setup page — server mode has a
-        <b>Send pairing request</b> button that needs no camera).</p>
+        phone. It issues a one-time pairing code and scans the display's QR
+        (or type the code into the display's phone setup page). Only displays
+        paired this way can connect.</p>
         <p class="dim">Displays confirm on their own remote, then dial in
         over a persistent connection — they work from any network that can
         reach this server.</p>
@@ -169,6 +170,9 @@ const $ = id => document.getElementById(id);
 let players = [];
 const esc = s => String(s ?? "").replace(/[&<>"]/g,
   c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+// JS string argument inside a double-quoted inline handler: JSON-quote,
+// then HTML-escape (the browser decodes the attribute before parsing JS).
+const jsArg = s => esc(JSON.stringify(String(s ?? "")));
 
 function toast(msg) {
   const t = $("toast");
@@ -221,7 +225,7 @@ function render() {
     const dot = p.online ? (st.armed ? "armed" : "on") : "";
     const labels = (p.labels || [])
       .map(l => `<span class="chip">${esc(l)}</span>`).join("");
-    return `<tr data-id="${p.id}">
+    return `<tr data-id="${esc(p.id)}">
       <td><span class="dot ${dot}"></span></td>
       <td><a class="name" href="/display.html?id=${encodeURIComponent(p.id)}"
           title="manage this display">${esc(p.name || p.id)}</a>${labels}
@@ -230,21 +234,21 @@ function render() {
       <td class="dim">${ago(p.last_seen)}</td>
       <td>${esc(st.current || (st.playing ? "(playing)" : "—"))}
           ${st.maintenance ? '<span class="badge warn">MENU</span>' : ""}</td>
-      <td class="dim">${st.free_gb != null ? st.free_gb + " GB" : "—"}</td>
+      <td class="dim">${st.free_gb != null ? esc(st.free_gb) + " GB" : "—"}</td>
       <td>
-        <button class="act" onclick="togglePlaylist('${p.id}', this)">☰</button>
-        <button class="act" onclick="cmd('${p.id}','restart')">⟳</button>
-        <button class="act" onclick="cmd('${p.id}','stop')">■</button>
-        <button class="act" onclick="cmd('${p.id}','restart_app')">↻</button>
-        <button class="act" onclick="editLabels('${p.id}', this)">✎</button>
-        <button class="act danger" onclick="removePlayer('${p.id}')">✕</button>
+        <button class="act" onclick="togglePlaylist(${jsArg(p.id)}, this)">☰</button>
+        <button class="act" onclick="cmd(${jsArg(p.id)},'restart')">⟳</button>
+        <button class="act" onclick="cmd(${jsArg(p.id)},'stop')">■</button>
+        <button class="act" onclick="cmd(${jsArg(p.id)},'restart_app')">↻</button>
+        <button class="act" onclick="editLabels(${jsArg(p.id)}, this)">✎</button>
+        <button class="act danger" onclick="removePlayer(${jsArg(p.id)})">✕</button>
       </td>
     </tr>`;
   }).join("");
 }
 
 async function cmd(id, c) {
-  const r = await api(`/api/players/${id}/command`, {
+  const r = await api(`/api/players/${encodeURIComponent(id)}/command`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ cmd: c }),
@@ -254,7 +258,7 @@ async function cmd(id, c) {
 
 async function removePlayer(id) {
   if (!confirm("Remove this display from the server?")) return;
-  await fetch(`/api/players/${id}`, { method: "DELETE" });
+  await fetch(`/api/players/${encodeURIComponent(id)}`, { method: "DELETE" });
   refresh();
 }
 
@@ -268,15 +272,15 @@ function editLabels(id, btn) {
   const tr = document.createElement("tr");
   tr.className = "editrow";
   tr.innerHTML = `<td colspan="7">Labels (comma-separated):
-    <input id="le_${id}" value="${esc((p.labels || []).join(", "))}">
-    <button onclick="saveLabels('${id}')">Save</button></td>`;
+    <input id="le_${esc(id)}" value="${esc((p.labels || []).join(", "))}">
+    <button onclick="saveLabels(${jsArg(id)})">Save</button></td>`;
   row.after(tr);
 }
 
 async function saveLabels(id) {
   const labels = $(`le_${id}`).value.split(",")
     .map(s => s.trim()).filter(Boolean);
-  await api(`/api/players/${id}/labels`, {
+  await api(`/api/players/${encodeURIComponent(id)}/labels`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ labels }),
@@ -294,7 +298,7 @@ async function togglePlaylist(id, btn) {
   tr.className = "sublist";
   tr.innerHTML = `<td colspan="7" class="dim">loading…</td>`;
   row.after(tr);
-  const d = await api(`/api/players/${id}/media`);
+  const d = await api(`/api/players/${encodeURIComponent(id)}/media`);
   const items = d.items || [];
   tr.firstChild.innerHTML = items.length
     ? `<table><thead><tr><th>Item</th><th>Kind</th><th>Secs</th>
@@ -303,11 +307,11 @@ async function togglePlaylist(id, btn) {
         <td>${i.playing ? "▶ " : ""}${esc(i.name)}${i.remote ?
           '<span class="chip">URL</span>' : ""}</td>
         <td class="dim">${esc(i.kind)}</td>
-        <td class="dim">${i.duration ?? "10"}</td>
+        <td class="dim">${esc(i.duration ?? "10")}</td>
         <td class="dim">${i.schedule ? "set" : ""}</td>
         <td class="dim">${i.enabled ? "" : "disabled"}</td>
       </tr>`).join("") + `</tbody></table>`
-    : `<span class="dim">${d.error || "playlist is empty"}</span>`;
+    : `<span class="dim">${esc(d.error || "playlist is empty")}</span>`;
 }
 
 async function conduct(c) {
@@ -323,7 +327,7 @@ function renderReady() {
     return `<tr>
       <td><span class="dot ${p.online ? (st.armed ? "armed" : "on") : ""}"></span></td>
       <td><a class="name" href="/display.html?id=${encodeURIComponent(p.id)}">${esc(p.name || p.id)}</a></td>
-      <td class="dim">${p.online ? (st.current || "ready") : "offline"}</td>
+      <td class="dim">${p.online ? esc(st.current || "ready") : "offline"}</td>
       <td>${st.armed ? '<span class="badge warn">ARMED</span>' : ""}</td>
     </tr>`;
   }).join("") : `<tr><td colspan="4" class="dim">No displays.</td></tr>`;
