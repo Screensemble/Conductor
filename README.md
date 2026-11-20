@@ -3,7 +3,7 @@
 </p>
 <h1 align="center">Screensemble Server</h1>
 <p align="center">
-  Self-hosted fleet management for Screensemble signage displays.
+  Signage That Takes the Stage.
   <br><em>An ensemble of screens.</em>
 </p>
 <p align="center">
