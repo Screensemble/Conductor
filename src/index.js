@@ -46,6 +46,7 @@ import {
   syncPlaylist,
 } from './playlists.js';
 import { statSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 const app = express();
 app.disable('x-powered-by');
@@ -153,7 +154,8 @@ app.use(async (req, res, next) => {
   next();
 });
 
-app.use(express.static('public'));
+// Resolved from the module, not the cwd — data/ is cwd-relative, pages aren't.
+app.use(express.static(fileURLToPath(new URL('../public', import.meta.url))));
 app.use('/api/pair', pairingRouter); // invite/pending — session-gated
 
 // -- Account ---------------------------------------------------------------
