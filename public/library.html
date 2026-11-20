@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Screensemble — Library</title>
+<link rel="icon" type="image/png" href="/favicon.png">
+<style>
+  :root {
+    color-scheme: dark;
+    --navy: #0a1428; --card: #10203c; --edge: #1d3a63;
+    --cyan: #3ec1f3; --blue: #1e9be8; --text: #dde6f2; --dim: #7a9bb8;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #000; color: var(--text);
+         font: 15px/1.5 system-ui, sans-serif; }
+  header { padding: 10px 20px; background: linear-gradient(90deg,#0d1b33,#12294d);
+           border-bottom: 2px solid var(--blue);
+           display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  header img.mark { height: 36px; }
+  header img.wordmark { height: 24px; }
+  nav { display: flex; gap: 4px; margin-left: 12px; }
+  nav .tab { background: none; border: 0; border-radius: 6px 6px 0 0;
+             color: var(--dim); font-size: 14px; font-weight: 600;
+             padding: 10px 14px; cursor: pointer; }
+  nav .tab:hover { color: var(--text); }
+  nav .tab.on { color: var(--cyan); border-bottom: 2px solid var(--cyan); }
+  main { max-width: 1080px; margin: 0 auto; padding: 20px 16px 60px; }
+  h2 { margin: 26px 0 10px; font-size: 15px; color: var(--text); }
+  h2 small { color: var(--dim); font-weight: 400; font-size: 12px; margin-left: 8px; }
+  h2:first-child { margin-top: 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px;
+          background: var(--card); border: 1px solid var(--edge);
+          border-radius: 8px; overflow: hidden; }
+  td, th { padding: 8px 10px; text-align: left; }
+  th { font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+       color: var(--dim); border-bottom: 1px solid var(--edge); font-weight: 600; }
+  td { border-bottom: 1px solid var(--edge); }
+  tr:last-child td { border-bottom: 0; }
+  td.num, th.num { text-align: right; }
+  .badge { color: var(--cyan); font-size: 10px; border: 1px solid var(--cyan);
+           border-radius: 4px; padding: 1px 5px; margin-left: 6px;
+           text-transform: uppercase; letter-spacing: .04em; }
+  .badge.gray { color: var(--dim); border-color: var(--dim); }
+  button { background: linear-gradient(180deg,#2fb2f0,#1e7fd0); color: #fff;
+           border: 0; border-radius: 6px; padding: 8px 14px; font-size: 14px;
+           cursor: pointer; }
+  button.secondary { background: #24405f; }
+  button.danger { background: #8c2f39; }
+  button:active { filter: brightness(.85); }
+  button.mini { padding: 3px 8px; font-size: 12px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  label { display: grid; gap: 4px; font-size: 13px; color: var(--dim); margin-bottom: 10px; }
+  label.inline { display: flex; gap: 6px; align-items: center; margin: 0; }
+  input, select { background: #000; border: 1px solid var(--edge); color: var(--text);
+                  border-radius: 6px; padding: 7px 9px; font-size: 14px; }
+  input:focus, select:focus { outline: none; border-color: var(--cyan); }
+  input[type=checkbox] { width: auto; }
+  .muted { color: var(--dim); font-size: 13px; }
+  .panel { background: var(--card); border: 1px solid var(--edge);
+           border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  .thumb { width: 64px; height: 36px; object-fit: cover; border-radius: 4px;
+           background: #000; border: 1px solid var(--edge); display: block; }
+  .thumbicon { font-size: 10px; color: var(--dim); display: flex;
+               align-items: center; justify-content: center; }
+  .empty { padding: 14px; color: var(--dim); font-size: 13px;
+           background: var(--card); border: 1px solid var(--edge);
+           border-radius: 8px; }
+  .backlink { color: var(--dim); font-size: 13px; text-decoration: none; }
+  .backlink:hover { color: var(--cyan); }
+  .plwrap { display: grid; grid-template-columns: 220px 1fr; gap: 16px; }
+  .pllist { background: var(--card); border: 1px solid var(--edge);
+            border-radius: 8px; padding: 10px; }
+  .pllist .pl { padding: 8px 10px; border-radius: 6px; cursor: pointer;
+                font-size: 14px; }
+  .pllist .pl:hover { background: #16294a; }
+  .pllist .pl.on { background: #16294a; color: var(--cyan); }
+  .plitem { display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+            border-bottom: 1px solid var(--edge); font-size: 14px; }
+  .plitem:last-child { border-bottom: 0; }
+  .plitem .t { flex: 1; overflow: hidden; text-overflow: ellipsis;
+               white-space: nowrap; }
+  .plitem .k { color: var(--dim); font-size: 11px; }
+  .dplayer { font-size: 13px; padding: 4px 8px; border: 1px solid var(--edge);
+             border-radius: 6px; display: inline-flex; gap: 6px;
+             align-items: center; }
+  .dplayer .dot { width: 8px; height: 8px; border-radius: 50%; background: #4a5e78; }
+  .dplayer .dot.on { background: #4caf50; }
+  .syncres { font-size: 12px; color: var(--dim); margin-top: 8px; }
+</style>
+</head>
+<body>
+<header>
+  <img class="mark" src="/logo.png" alt="">
+  <img class="wordmark" src="/wordmark.png" alt="Screensemble">
+  <a class="backlink" href="/">← fleet</a>
+  <nav>
+    <button class="tab on">Library &amp; playlists</button>
+  </nav>
+</header>
+<main>
+
+  <!-- ============ Library ============ -->
+  <section>
+    <h2>Media library <small>files live on the server — push to any display</small></h2>
+    <div class="panel row">
+      <input type="file" id="upFiles" multiple>
+      <button onclick="uploadFiles()">Upload to library</button>
+      <span class="muted" id="upStatus"></span>
+    </div>
+    <div class="panel row" style="justify-content:space-between">
+      <div class="row">
+        <b>Push selected →</b>
+        <span id="pushTargets"></span>
+        <button class="mini" onclick="pushSelected()">Push</button>
+      </div>
+      <label class="inline"><input type="checkbox" id="selAll"
+        onchange="toggleSelAll(this.checked)"> all</label>
+    </div>
+    <div id="libList"></div>
+  </section>
+
+  <!-- ============ Playlists ============ -->
+  <section>
+    <h2>Shared playlists <small>ordered groups synced to displays</small></h2>
+    <div class="plwrap">
+      <div class="pllist" id="plList">
+        <div class="pl" onclick="newPlaylist()" style="color:var(--cyan)">+ New playlist</div>
+      </div>
+      <div class="panel" id="plEditor" hidden>
+        <div class="row" style="margin-bottom:12px">
+          <label style="margin:0">Name
+            <input id="plName" style="width:200px"></label>
+          <button class="mini danger" style="margin-left:auto"
+            onclick="deletePlaylist()">Delete</button>
+        </div>
+        <div class="row" style="margin-bottom:8px">
+          <select id="plAdd"></select>
+          <button class="mini secondary" onclick="addToPlaylist()">Add item</button>
+        </div>
+        <div id="plItems" class="panel" style="padding:6px;margin-bottom:12px"></div>
+        <div class="row" id="plPlayers" style="margin-bottom:12px"></div>
+        <div class="row">
+          <button onclick="savePlaylist()">Save &amp; sync</button>
+          <button class="secondary" onclick="syncPlaylist()">Sync now</button>
+          <label class="inline"><input type="checkbox" id="plPrune">
+            remove items not in playlist</label>
+        </div>
+        <div class="syncres" id="syncRes"></div>
+      </div>
+      <div class="empty" id="plHint">Select a playlist (or create one) to edit
+        its items and assign displays.</div>
+    </div>
+  </section>
+
+</main>
+<script src="/upload-toast.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const escH = s => String(s).replace(/[&<>"]/g,
+  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let libItems = [], players = [], playlists = {}, selPl = null;
+let plItems = [], plPids = new Set();
+
+async function api(path, opts) {
+  const r = await fetch('/api' + path, opts);
+  return r.json();
+}
+const J = {method:'POST', headers:{'Content-Type':'application/json'}};
+
+function toast(msg) {
+  const t = document.createElement('div');
+  t.textContent = msg;
+  t.style.cssText = 'position:fixed;bottom:16px;left:50%;transform:translateX(-50%);' +
+    'background:linear-gradient(180deg,#2fb2f0,#1e7fd0);padding:8px 18px;' +
+    'border-radius:6px;z-index:10';
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2200);
+}
+
+// ---------- library ----------
+function thumbHtml(i) {
+  if (i.kind === 'image')
+    return `<img class="thumb" src="/api/library/file/${encodeURIComponent(i.name)}" alt="">`;
+  return '<div class="thumb thumbicon">video</div>';
+}
+function fmtSize(b) { return (b / 1048576).toFixed(1) + ' MB'; }
+
+async function refresh() {
+  const [l, p, pl] = await Promise.all([
+    api('/library'), api('/players'), api('/playlists'),
+  ]);
+  libItems = l.items || [];
+  players = (p.players || []).filter(x => x.online);
+  playlists = pl.playlists || {};
+  renderLib(); renderTargets(); renderPlList(); renderPlEditor();
+}
+
+function renderLib() {
+  if (!libItems.length) {
+    $('libList').innerHTML =
+      '<div class="empty">library is empty — upload media above</div>';
+    return;
+  }
+  $('libList').innerHTML = '<table><tr><th></th><th></th><th>Name</th>' +
+    '<th>Kind</th><th class="num">Size</th><th></th></tr>' +
+    libItems.map(i =>
+      `<tr><td><input type="checkbox" class="libsel" value="${escH(i.name)}"></td>` +
+      `<td>${thumbHtml(i)}</td><td><b>${escH(i.name)}</b></td>` +
+      `<td class="muted">${i.kind}</td><td class="num">${fmtSize(i.size)}</td>` +
+      `<td class="num"><button class="mini danger" ` +
+      `onclick="delLib('${escH(i.name).replace(/'/g, "\\'")}')">✕</button></td></tr>`
+    ).join('') + '</table>';
+}
+
+function renderTargets() {
+  $('pushTargets').innerHTML = players.length
+    ? players.map(p =>
+        `<label class="inline dplayer"><span class="dot${p.online ? ' on' : ''}"></span>` +
+        `<input type="checkbox" class="pushtarget" value="${p.id}">` +
+        `${escH(p.name || p.id)}</label>`).join('')
+    : '<span class="muted">no displays online</span>';
+}
+
+function toggleSelAll(on) {
+  document.querySelectorAll('.libsel').forEach(c => c.checked = on);
+}
+
+async function uploadFiles() {
+  const files = $('upFiles').files;
+  if (!files.length) return;
+  $('upStatus').textContent = `uploading ${files.length}…`;
+  for (const f of files) {
+    const r = await fetch(
+      '/api/library?name=' + encodeURIComponent(f.name),
+      {method: 'POST', body: f});
+    if (!r.ok) { $('upStatus').textContent = 'upload failed'; return; }
+  }
+  $('upStatus').textContent = `${files.length} file(s) added`;
+  $('upFiles').value = '';
+  refresh();
+}
+
+async function pushSelected() {
+  const names = [...document.querySelectorAll('.libsel:checked')]
+    .map(c => c.value);
+  const pids = [...document.querySelectorAll('.pushtarget:checked')]
+    .map(c => c.value);
+  if (!names.length || !pids.length)
+    return toast('select items and displays');
+  for (const n of names)
+    await api('/library/' + encodeURIComponent(n) + '/push',
+      {...J, body: JSON.stringify({players: pids})});
+  toast(`pushing ${names.length} item(s) to ${pids.length} display(s)`);
+}
+
+async function delLib(name) {
+  if (!confirm('Delete "' + name + '" from the library? ' +
+      'Displays keep their copies.')) return;
+  await fetch('/api/library/' + encodeURIComponent(name), {method: 'DELETE'});
+  refresh();
+}
+
+// ---------- playlists ----------
+function renderPlList() {
+  const names = Object.keys(playlists).sort();
+  $('plList').innerHTML =
+    '<div class="pl" onclick="newPlaylist()" style="color:var(--cyan)">+ New playlist</div>' +
+    names.map(n =>
+      `<div class="pl${selPl === n ? ' on' : ''}" ` +
+      `onclick="selectPlaylist('${escH(n).replace(/'/g, "\\'")}')">${escH(n)}` +
+      `<span class="muted" style="float:right">${playlists[n].items.length}</span></div>`
+    ).join('');
+}
+
+function selectPlaylist(name) {
+  selPl = name;
+  const pl = playlists[name];
+  plItems = [...pl.items];
+  plPids = new Set(pl.players);
+  renderPlList(); renderPlEditor();
+}
+function newPlaylist() {
+  selPl = 'new playlist';
+  plItems = []; plPids = new Set();
+  renderPlList(); renderPlEditor();
+}
+
+function renderPlEditor() {
+  $('plEditor').hidden = !selPl;
+  $('plHint').hidden = !!selPl;
+  if (!selPl) return;
+  $('plName').value = selPl;
+  $('plAdd').innerHTML = libItems.map(i =>
+    `<option value="${escH(i.name)}">${escH(i.name)}</option>`).join('');
+  $('plItems').innerHTML = plItems.length
+    ? plItems.map((n, i) => {
+        const it = libItems.find(x => x.name === n);
+        return `<div class="plitem"><span class="k">${i + 1}</span>` +
+          `<span class="t">${escH(n)}</span>` +
+          `<span class="k">${it ? it.kind : 'missing'}</span>` +
+          `<button class="mini secondary" onclick="plMove(${i},-1)">↑</button>` +
+          `<button class="mini secondary" onclick="plMove(${i},1)">↓</button>` +
+          `<button class="mini danger" onclick="plDel(${i})">✕</button></div>`;
+      }).join('')
+    : '<div class="muted" style="padding:6px">no items — add from the library</div>';
+  $('plPlayers').innerHTML = '<b>Displays:</b>' + (
+    players.length
+      ? players.map(p =>
+          `<label class="inline dplayer"><span class="dot${p.online ? ' on' : ''}"></span>` +
+          `<input type="checkbox" class="plpid" value="${p.id}" ` +
+          `${plPids.has(p.id) ? 'checked' : ''}>${escH(p.name || p.id)}</label>`
+        ).join('')
+      : '<span class="muted">none online</span>');
+  $('syncRes').textContent = '';
+}
+
+function addToPlaylist() {
+  const n = $('plAdd').value;
+  if (n && !plItems.includes(n)) plItems.push(n);
+  renderPlEditor();
+}
+function plMove(i, d) {
+  const j = i + d;
+  if (j < 0 || j >= plItems.length) return;
+  [plItems[i], plItems[j]] = [plItems[j], plItems[i]];
+  renderPlEditor();
+}
+function plDel(i) { plItems.splice(i, 1); renderPlEditor(); }
+
+function collectPl() {
+  return {
+    items: plItems,
+    players: [...document.querySelectorAll('.plpid:checked')]
+      .map(c => c.value),
+  };
+}
+
+function showSync(results) {
+  $('syncRes').innerHTML = Object.entries(results).map(([pid, r]) => {
+    if (!r || !r.ok) return `${escH(pid)}: ${escH(r?.error || 'failed')}`;
+    const bits = [];
+    if (r.pushed.length) bits.push(`pushed ${r.pushed.length}`);
+    if (r.pruned.length) bits.push(`removed ${r.pruned.length}`);
+    if (r.missing.length) bits.push(`missing ${r.missing.join(', ')}`);
+    return `${escH(pid)}: ${bits.join(' · ') || 'in sync'}`;
+  }).join('<br>');
+}
+
+async function savePlaylist() {
+  const name = $('plName').value.trim();
+  if (!name) return toast('name required');
+  const r = await api('/playlists/' + encodeURIComponent(name),
+    {...J, body: JSON.stringify(collectPl())});
+  selPl = name;
+  showSync(r.sync || {});
+  refresh();
+}
+async function syncPlaylist() {
+  if (!selPl || !playlists[selPl]) return toast('save first');
+  const r = await api('/playlists/' + encodeURIComponent(selPl) + '/sync',
+    {...J, body: JSON.stringify({prune: $('plPrune').checked})});
+  showSync(r);
+}
+async function deletePlaylist() {
+  if (!selPl || !playlists[selPl] ||
+      !confirm('Delete playlist "' + selPl + '"? Displays keep content.'))
+    return;
+  await fetch('/api/playlists/' + encodeURIComponent(selPl),
+    {method: 'DELETE'});
+  selPl = null;
+  refresh();
+}
+
+refresh();
+setInterval(refresh, 15000);
+</script>
+</body>
+</html>

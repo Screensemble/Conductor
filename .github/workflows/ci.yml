@@ -1,0 +1,38 @@
+name: ci
+
+# Validates every code push and PR. Tag pushes are ignored — releases run
+# their own pipeline, and a release is only ever cut from a commit that
+# already passed this.
+on:
+  push:
+    branches: [main]
+    tags-ignore: ["**"]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Syntax check
+        run: |
+          for f in src/*.js; do node --check "$f" || exit 1; done
+          echo "all src files parse"
+
+      - name: Public assets exist
+        run: |
+          for f in index.html display.html library.html pair.html upload-toast.js; do
+            [ -f "public/$f" ] || { echo "missing public/$f"; exit 1; }
+          done
+          echo "public assets OK"
+
+      - name: Docker build (no push)
+        run: docker build .

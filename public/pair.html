@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Screensemble — Pair a display</title>
+<style>
+  :root {
+    --navy: #0a1428; --card: #10203c; --edge: #1d3a63;
+    --cyan: #3ec1f3; --text: #dde3e8; --dim: #7a9bb8;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: #000; color: var(--text);
+    font: 16px/1.5 system-ui, sans-serif;
+    display: flex; justify-content: center; padding: 24px 16px;
+  }
+  .card {
+    background: var(--card); border-top: 4px solid var(--cyan);
+    border-radius: 10px; padding: 24px; width: 100%; max-width: 520px;
+  }
+  .step { color: var(--cyan); font-size: 13px; letter-spacing: 1px; margin: 0 0 4px; }
+  h1 { font-size: 20px; margin: 0 0 8px; }
+  p.dim { color: var(--dim); font-size: 14px; margin: 0 0 18px; }
+  label { display: block; font-size: 13px; color: var(--dim); margin: 14px 0 4px; }
+  input {
+    width: 100%; padding: 12px; font-size: 16px; color: var(--text);
+    background: #000; border: 1px solid var(--edge); border-radius: 6px;
+  }
+  button {
+    display: block; width: 100%; margin: 16px 0 0; padding: 14px;
+    font-size: 16px; font-weight: 600; border: 0; border-radius: 8px;
+    background: linear-gradient(90deg, #1e9be8, #3ec1f3); color: #06101f;
+    cursor: pointer;
+  }
+  button.ghost { background: var(--edge); color: var(--text); font-weight: 400; }
+  video { width: 100%; border-radius: 8px; background: #000; margin-top: 14px; }
+  .err { color: #e8694a; font-size: 14px; margin-top: 10px; min-height: 20px; }
+  .hint { font-size: 12px; color: #556570; margin-top: 4px; }
+  .hidden { display: none; }
+  code { color: var(--cyan); }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="step" id="step">PAIR A DISPLAY</div>
+  <h1 id="title">Connect a display to this server</h1>
+  <p class="dim" id="desc">Scan the QR code on the display's setup screen.
+     This server pushes its address to the display, which then asks for
+     confirmation on its own remote.</p>
+  <div id="body"></div>
+  <div class="err" id="err"></div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+let client = null;   // { base, token } parsed from the scanned QR
+let stream = null;
+
+function showError(msg) { $("err").textContent = msg || ""; }
+
+function stepServer() {
+  $("body").innerHTML = `
+    <label>This server's address (as the display should reach it)</label>
+    <input id="server_url" value="${location.host}">
+    <label>Auth token (optional)</label>
+    <input id="auth" type="password" placeholder="leave empty if none">
+    <button onclick="stepScan()">Scan display QR code</button>
+    <button class="ghost" onclick="stepManual()">Enter QR contents manually</button>
+    <div class="hint">Camera scanning needs Chrome/Edge (BarcodeDetector).</div>`;
+}
+
+async function stepScan() {
+  if (!("BarcodeDetector" in window)) { stepManual(); return; }
+  if (!navigator.mediaDevices?.getUserMedia) {
+    // Browsers block camera on plain http:// (non-localhost) — point the
+    // user at the no-camera path instead of a silent failure.
+    $("title").textContent = "Camera needs HTTPS";
+    $("desc").innerHTML = `Browsers only allow camera access on secure
+      pages. Easier path: scan the display's QR with your phone's camera
+      app, open the setup page, and use <b>Send pairing request</b>
+      there — no camera needed.`;
+    $("body").innerHTML = `
+      <button onclick="stepManual()">Enter QR contents manually</button>
+      <button class="ghost" onclick="stepServer()">Back</button>`;
+    return;
+  }
+  $("title").textContent = "Scan the display's QR code";
+  $("desc").textContent = "Point the camera at the QR code on the display's screen.";
+  $("body").innerHTML = `<video id="cam" autoplay muted playsinline></video>
+    <button class="ghost" onclick="stopCam();stepManual()">Enter manually instead</button>`;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+    $("cam").srcObject = stream;
+    const det = new BarcodeDetector({ formats: ["qr_code"] });
+    const tick = async () => {
+      if (!stream) return;
+      try {
+        const codes = await det.detect($("cam"));
+        if (codes.length) { onScan(codes[0].rawValue); return; }
+      } catch (e) { /* frame not ready */ }
+      requestAnimationFrame(tick);
+    };
+    tick();
+  } catch (e) {
+    showError("Camera unavailable — enter the QR contents manually.");
+    stepManual();
+  }
+}
+
+function stopCam() {
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+}
+
+function stepManual() {
+  $("title").textContent = "Enter the QR contents";
+  $("desc").textContent = "Paste the URL encoded in the display's QR code (it looks like http://<ip>:8282/setup?k=…).";
+  $("body").innerHTML = `
+    <input id="qr_text" placeholder="http://192.168.x.x:8282/setup?k=…">
+    <button onclick="onScan($('qr_text').value)">Continue</button>`;
+}
+
+function onScan(raw) {
+  showError("");
+  let u;
+  try { u = new URL(raw.trim()); } catch (e) {
+    showError("That doesn't look like a URL — try again."); return;
+  }
+  const token = u.searchParams.get("k");
+  if (!token) { showError("QR didn't contain a setup token."); return; }
+  stopCam();
+  client = { base: u.origin, token };
+
+  const s = encodeURIComponent($("server_url") ? $("server_url").value : location.host);
+  const a = encodeURIComponent($("auth") ? $("auth").value : "");
+  // New tab hits the display's /pair endpoint and closes itself — no CORS.
+  // s= can be any URL, so a cloud-hosted server works the same way.
+  window.open(`${client.base}/pair?s=${s}&a=${a}&t=${encodeURIComponent(client.token)}`, "_blank");
+
+  $("title").textContent = "Confirm on the display";
+  $("desc").innerHTML = `The display at <code>${client.base}</code> is now
+    asking whether to accept this server. Press <b>Pair</b> on the display's
+    remote to finish — this page returns to the dashboard when it does.`;
+  $("body").innerHTML = `
+    <button class="ghost" onclick="location.reload()">Pair another display</button>`;
+  watchOutcome();
+}
+
+// Poll until the display answers: accept registers the player (→
+// dashboard), decline/expiry drops the pending offer (→ message).
+function watchOutcome() {
+  const base = client.base.replace(/\/$/, "");
+  let sawPending = false;
+  const started = Date.now();
+  const t = setInterval(async () => {
+    if (Date.now() - started > 120000) { clearInterval(t); return; }
+    try {
+      const [players, pending] = await Promise.all([
+        fetch("/api/players").then(r => r.json()),
+        fetch("/api/pair/pending").then(r => r.json()),
+      ]);
+      const mine = u => (u || "").replace(/\/$/, "") === base;
+      if ((players.players || []).some(p => mine(p.client_url))) {
+        clearInterval(t);
+        location.href = "/";
+        return;
+      }
+      const offer = (pending.pending || []).some(p => mine(p.client_url));
+      sawPending = sawPending || offer;
+      if (sawPending && !offer) {
+        clearInterval(t);
+        $("title").textContent = "Pairing declined";
+        $("desc").textContent =
+          "The display cancelled the pairing request.";
+      }
+    } catch (e) { /* server hiccup — keep waiting */ }
+  }, 2000);
+}
+
+stepServer();
+</script>
+</body>
+</html>

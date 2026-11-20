@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Screensemble Server</title>
+<link rel="icon" href="/favicon.ico">
+<style>
+  :root {
+    --navy: #0a1428; --card: #10203c; --edge: #1d3a63;
+    --cyan: #3ec1f3; --text: #dde3e8; --dim: #7a9bb8;
+    --ok: #4be08a; --warn: #e8b04a; --err: #e8694a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #000; color: var(--text);
+         font: 15px/1.5 system-ui, sans-serif; }
+  header { display: flex; align-items: center; gap: 14px;
+           padding: 10px 20px; background: linear-gradient(90deg,#0d1b33,#12294d);
+           border-bottom: 2px solid var(--cyan); flex-wrap: wrap; }
+  header .brand { display: flex; align-items: center; gap: 10px; }
+  header .brand img.logo { height: 30px; }
+  header .brand img.mark { height: 22px; }
+  header .tag { font-size: 11px; letter-spacing: 2px; color: var(--cyan);
+                border: 1px solid var(--edge); border-radius: 4px;
+                padding: 2px 7px; }
+  nav { display: flex; gap: 4px; margin-left: 8px; }
+  nav button { background: none; border: 0; color: var(--dim);
+               font: 600 14px system-ui; padding: 8px 14px;
+               border-radius: 6px; cursor: pointer; }
+  nav button.on { color: var(--text); background: var(--edge); }
+  header .right { margin-left: auto; display: flex; align-items: center;
+                  gap: 10px; font-size: 13px; color: var(--dim); }
+  main { max-width: 1040px; margin: 0 auto; padding: 20px 16px 60px; }
+  .card { background: var(--card); border: 1px solid var(--edge);
+          border-radius: 10px; margin-bottom: 18px; overflow: hidden; }
+  .card h2 { margin: 0; padding: 12px 16px; font-size: 14px; color: var(--cyan);
+             letter-spacing: 1.5px; text-transform: uppercase;
+             border-bottom: 1px solid var(--edge); }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 10px 12px; font-size: 14px;
+           border-bottom: 1px solid #16294a; }
+  th { color: var(--dim); font-size: 11px; letter-spacing: 1px;
+       text-transform: uppercase; }
+  tr:last-child td { border-bottom: 0; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+         background: var(--err); }
+  .dot.on { background: var(--ok); }
+  .dot.armed { background: var(--warn); }
+  .name { font-weight: 600; }
+  a.name { color: var(--text); text-decoration: none; }
+  a.name:hover { color: var(--cyan); text-decoration: underline; }
+  .chip { display: inline-block; background: var(--edge); color: var(--cyan);
+          font-size: 11px; border-radius: 4px; padding: 1px 7px;
+          margin-left: 6px; }
+  .badge { display: inline-block; font-size: 10px; font-weight: 700;
+           letter-spacing: 1px; color: var(--navy); background: var(--cyan);
+           border-radius: 3px; padding: 1px 5px; margin-left: 6px;
+           vertical-align: 1px; }
+  .badge.warn { background: var(--warn); }
+  .dim { color: var(--dim); font-size: 13px; }
+  button.act { background: var(--edge); border: 0; color: var(--text);
+               border-radius: 5px; padding: 5px 10px; margin-right: 4px;
+               font-size: 12px; cursor: pointer; }
+  button.act:hover { background: #2a4a7a; }
+  button.act.danger { color: var(--err); }
+  .editrow td { background: #0d1b33; }
+  .editrow input { background: #000; border: 1px solid var(--edge);
+                   border-radius: 5px; color: var(--text); padding: 7px 10px;
+                   font-size: 14px; width: 60%; }
+  .editrow button { background: var(--cyan); border: 0; color: var(--navy);
+                    font-weight: 700; border-radius: 5px; padding: 7px 14px;
+                    margin-left: 8px; cursor: pointer; }
+  .sublist td { background: #0d1b33; padding: 4px 12px 12px 52px; }
+  .sublist table { background: none; }
+  .sublist th, .sublist td { padding: 4px 8px; font-size: 13px;
+                             border-bottom: 1px solid #12233f; }
+  .big { display: flex; gap: 14px; padding: 18px 16px; flex-wrap: wrap; }
+  .big button { flex: 1; min-width: 200px; padding: 22px; font-size: 20px;
+                font-weight: 800; border: 0; border-radius: 10px;
+                cursor: pointer; }
+  .big .arm { background: var(--edge); color: var(--text); }
+  .big .arm:hover { background: #2a4a7a; }
+  .big .go { background: linear-gradient(90deg,#1e9be8,#3ec1f3);
+             color: var(--navy); }
+  a.link { color: var(--cyan); }
+  .pad { padding: 14px 16px; }
+  #toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+           background: var(--card); border: 1px solid var(--cyan);
+           border-radius: 8px; padding: 10px 18px; font-size: 14px;
+           opacity: 0; transition: opacity .3s; pointer-events: none; }
+  footer { border-top: 1px solid var(--edge); padding: 12px 20px;
+           font-size: 12px; color: var(--dim); display: flex; gap: 16px; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <img class="logo" src="/logo.png" alt="">
+    <img class="mark" src="/wordmark.png" alt="Screensemble">
+    <span class="tag">SERVER</span>
+  </div>
+  <nav>
+    <button id="tabDisplays" class="on" onclick="showTab('displays')">Displays</button>
+    <button id="tabConductor" onclick="showTab('conductor')">Conductor</button>
+    <button id="tabPair" onclick="showTab('pair')">Pairing</button>
+    <a href="/library.html" style="align-self:center;font-size:14px;font-weight:600;color:var(--dim);text-decoration:none;padding:10px 14px">Library</a>
+  </nav>
+  <div class="right"><span id="onlineCount"></span><span id="serverName"></span></div>
+</header>
+<main>
+  <div id="displays">
+    <div class="card">
+      <h2>Displays</h2>
+      <table>
+        <thead><tr>
+          <th></th><th>Display</th><th>Version</th><th>Last seen</th>
+          <th>Now showing</th><th>Free</th><th></th>
+        </tr></thead>
+        <tbody id="rows"><tr><td colspan="7" class="dim">No displays registered — open the Pairing tab.</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="conductor" class="hidden">
+    <div class="card">
+      <h2>Conductor — synchronized playback</h2>
+      <div class="big">
+        <button class="arm" onclick="conduct('arm')">ARM</button>
+        <button class="go" onclick="conduct('go')">GO</button>
+      </div>
+      <div class="pad dim">
+        Arm stages every connected display at playlist item 1 — videos pause
+        on their first frame, images show statically. Go releases them all
+        at once.
+      </div>
+    </div>
+    <div class="card">
+      <h2>Readiness</h2>
+      <table><thead><tr><th></th><th>Display</th><th>State</th><th>Staged</th></tr></thead>
+      <tbody id="ready"></tbody></table>
+    </div>
+  </div>
+
+  <div id="pair" class="hidden">
+    <div class="card">
+      <h2>Pair a display</h2>
+      <div class="pad">
+        <p>Open the <a class="link" href="/pair.html">pairing page</a> on a
+        phone (or the display's own setup page — server mode has a
+        <b>Send pairing request</b> button that needs no camera).</p>
+        <p class="dim">Displays confirm on their own remote, then dial in
+        over a persistent connection — they work from any network that can
+        reach this server.</p>
+      </div>
+      <h2>Pending offers</h2>
+      <div class="pad" id="pending"><span class="dim">none</span></div>
+    </div>
+  </div>
+</main>
+<div id="toast"></div>
+<footer><span id="foot"></span></footer>
+
+<script src="/upload-toast.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+let players = [];
+const esc = s => String(s ?? "").replace(/[&<>"]/g,
+  c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function toast(msg) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.style.opacity = 1;
+  setTimeout(() => t.style.opacity = 0, 2200);
+}
+
+function showTab(name) {
+  for (const t of ["displays", "conductor", "pair"]) {
+    $(t).classList.toggle("hidden", t !== name);
+    $("tab" + t[0].toUpperCase() + t.slice(1))
+      .classList.toggle("on", t === name);
+  }
+}
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  return r.json().catch(() => ({}));
+}
+
+function ago(iso) {
+  if (!iso) return "never";
+  const s = Math.max(0, (Date.now() - new Date(iso)) / 1000);
+  if (s < 60) return `${s | 0}s ago`;
+  if (s < 3600) return `${s / 60 | 0}m ago`;
+  if (s < 86400) return `${s / 3600 | 0}h ago`;
+  return `${s / 86400 | 0}d ago`;
+}
+
+async function refresh() {
+  const d = await api("/api/players");
+  players = d.players || [];
+  render();
+  renderReady();
+  const online = players.filter(p => p.online).length;
+  $("onlineCount").textContent =
+    `${online}/${players.length} online`;
+}
+
+function render() {
+  const tb = $("rows");
+  if (!players.length) {
+    tb.innerHTML = `<tr><td colspan="7" class="dim">
+      No displays registered — open the Pairing tab.</td></tr>`;
+    return;
+  }
+  tb.innerHTML = players.map(p => {
+    const st = p.status || {};
+    const dot = p.online ? (st.armed ? "armed" : "on") : "";
+    const labels = (p.labels || [])
+      .map(l => `<span class="chip">${esc(l)}</span>`).join("");
+    return `<tr data-id="${p.id}">
+      <td><span class="dot ${dot}"></span></td>
+      <td><a class="name" href="/display.html?id=${encodeURIComponent(p.id)}"
+          title="manage this display">${esc(p.name || p.id)}</a>${labels}
+          ${st.armed ? '<span class="badge warn">ARMED</span>' : ""}</td>
+      <td class="dim">${esc(p.client_version || "—")}</td>
+      <td class="dim">${ago(p.last_seen)}</td>
+      <td>${esc(st.current || (st.playing ? "(playing)" : "—"))}
+          ${st.maintenance ? '<span class="badge warn">MENU</span>' : ""}</td>
+      <td class="dim">${st.free_gb != null ? st.free_gb + " GB" : "—"}</td>
+      <td>
+        <button class="act" onclick="togglePlaylist('${p.id}', this)">☰</button>
+        <button class="act" onclick="cmd('${p.id}','restart')">⟳</button>
+        <button class="act" onclick="cmd('${p.id}','stop')">■</button>
+        <button class="act" onclick="cmd('${p.id}','restart_app')">↻</button>
+        <button class="act" onclick="editLabels('${p.id}', this)">✎</button>
+        <button class="act danger" onclick="removePlayer('${p.id}')">✕</button>
+      </td>
+    </tr>`;
+  }).join("");
+}
+
+async function cmd(id, c) {
+  const r = await api(`/api/players/${id}/command`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cmd: c }),
+  });
+  toast(r.error || `${c} → ${r.ok ? "ok" : "failed"}`);
+}
+
+async function removePlayer(id) {
+  if (!confirm("Remove this display from the server?")) return;
+  await fetch(`/api/players/${id}`, { method: "DELETE" });
+  refresh();
+}
+
+function editLabels(id, btn) {
+  const row = btn.closest("tr");
+  if (row.nextSibling?.classList?.contains("editrow")) {
+    row.nextSibling.remove();
+    return;
+  }
+  const p = players.find(x => x.id === id) || {};
+  const tr = document.createElement("tr");
+  tr.className = "editrow";
+  tr.innerHTML = `<td colspan="7">Labels (comma-separated):
+    <input id="le_${id}" value="${esc((p.labels || []).join(", "))}">
+    <button onclick="saveLabels('${id}')">Save</button></td>`;
+  row.after(tr);
+}
+
+async function saveLabels(id) {
+  const labels = $(`le_${id}`).value.split(",")
+    .map(s => s.trim()).filter(Boolean);
+  await api(`/api/players/${id}/labels`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ labels }),
+  });
+  refresh();
+}
+
+async function togglePlaylist(id, btn) {
+  const row = btn.closest("tr");
+  if (row.nextSibling?.classList?.contains("sublist")) {
+    row.nextSibling.remove();
+    return;
+  }
+  const tr = document.createElement("tr");
+  tr.className = "sublist";
+  tr.innerHTML = `<td colspan="7" class="dim">loading…</td>`;
+  row.after(tr);
+  const d = await api(`/api/players/${id}/media`);
+  const items = d.items || [];
+  tr.firstChild.innerHTML = items.length
+    ? `<table><thead><tr><th>Item</th><th>Kind</th><th>Secs</th>
+       <th>Schedule</th><th>State</th></tr></thead><tbody>` +
+      items.map(i => `<tr>
+        <td>${i.playing ? "▶ " : ""}${esc(i.name)}${i.remote ?
+          '<span class="chip">URL</span>' : ""}</td>
+        <td class="dim">${esc(i.kind)}</td>
+        <td class="dim">${i.duration ?? "10"}</td>
+        <td class="dim">${i.schedule ? "set" : ""}</td>
+        <td class="dim">${i.enabled ? "" : "disabled"}</td>
+      </tr>`).join("") + `</tbody></table>`
+    : `<span class="dim">${d.error || "playlist is empty"}</span>`;
+}
+
+async function conduct(c) {
+  const r = await api(`/api/conductor/${c}`, { method: "POST" });
+  toast(`${c.toUpperCase()} → ${r.delivered ?? 0} display(s)`);
+  setTimeout(refresh, 500);
+}
+
+function renderReady() {
+  const tb = $("ready");
+  tb.innerHTML = players.length ? players.map(p => {
+    const st = p.status || {};
+    return `<tr>
+      <td><span class="dot ${p.online ? (st.armed ? "armed" : "on") : ""}"></span></td>
+      <td><a class="name" href="/display.html?id=${encodeURIComponent(p.id)}">${esc(p.name || p.id)}</a></td>
+      <td class="dim">${p.online ? (st.current || "ready") : "offline"}</td>
+      <td>${st.armed ? '<span class="badge warn">ARMED</span>' : ""}</td>
+    </tr>`;
+  }).join("") : `<tr><td colspan="4" class="dim">No displays.</td></tr>`;
+}
+
+async function refreshPending() {
+  const d = await api("/api/pair/pending");
+  const pend = d.pending || [];
+  $("pending").innerHTML = pend.length
+    ? pend.map(p => `<div>• ${esc(p.name || p.client_url || p.id)}</div>`)
+      .join("")
+    : `<span class="dim">none</span>`;
+}
+
+async function boot() {
+  const info = await api("/api/info");
+  $("serverName").textContent = info.name || "";
+  $("foot").textContent =
+    `${info.product || "screensemble-server"} v${info.version || "?"}`;
+  refresh();
+  refreshPending();
+  setInterval(refresh, 3000);
+  setInterval(refreshPending, 5000);
+}
+boot();
+</script>
+</body>
+</html>
