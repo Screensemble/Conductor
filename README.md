@@ -1,66 +1,80 @@
-# Screensemble Server
+<p align="center">
+  <img src="public/logo.png" alt="Screensemble logo" width="128">
+</p>
+<h1 align="center">Screensemble Server</h1>
+<p align="center">
+  Self-hosted fleet management for Screensemble signage displays.
+</p>
+<p align="center">
+  <a href="AI-DECLARATION.md"><img src="https://img.shields.io/badge/AI--DECLARATION-pair-blue" alt="AI-DECLARATION: pair"></a>
+</p>
+<p align="center">
+  <a href="https://github.com/Screensemble/Screensemble-Server/releases"><img src="https://img.shields.io/github/v/release/Screensemble/Screensemble-Server" alt="Latest release"></a>
+  <a href="https://github.com/Screensemble/Screensemble-Server/actions/workflows/release.yml"><img src="https://github.com/Screensemble/Screensemble-Server/actions/workflows/release.yml/badge.svg" alt="Release build"></a>
+  <a href="https://github.com/Screensemble/Screensemble-Server/actions/workflows/ci.yml"><img src="https://github.com/Screensemble/Screensemble-Server/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+</p>
 
-Self-hosted management server for Screensemble digital-signage displays.
-Coordinates the [Screensemble Player](../Screensemble-Addon) Kodi addon —
-fleet registry, content distribution, shared playlists, remote control —
-over a single outbound WebSocket per display, so players work behind NAT
-and firewalls with no inbound connectivity.
+**One dashboard, every display.** Pair a [Screensemble Player](../Screensemble-Addon) Kodi addon once, then manage its content, playlists, and settings entirely from the server — each display dials out on a single persistent WebSocket, so it works behind NAT and firewalls with no inbound connectivity, and keeps playing its last known content when the link drops.
 
-Designed to run fully offline on an isolated show network.
+Designed to run fully offline on an isolated show network. No cloud account, no phone-home.
 
-## Run
+## Features
 
-```bash
-npm ci
-PORT=8090 npm start
+- **Fleet registry** - persistent player records with hardware-anchored identity (a reinstalled display rebinds, never duplicates), labels, online/last-seen, live status echo.
+- **Per-display admin** - the player's full local admin surface, proxied over its socket: playlist ordering, enable/disable, durations, schedules, shuffle, URL items, uploads, settings, restart.
+- **Media library** - every upload keeps a server-side copy, reusable across any display. Browse, push, delete.
+- **Shared playlists** - named ordered groups assigned to displays. Sync pushes missing files, applies order, and can prune extras for an exact match — one playlist, any number of displays converging on it.
+- **Upload queue** - browser uploads and library pushes ride a `pull_file` handshake: the display downloads over HTTP with per-file progress and SHA-256 verification. Still outbound-only.
+- **Pairing** - version-gated enrollment on both sides, then an on-TV confirm before a display registers.
+- **Deferred updates** - content changes queue on the display and apply at the next natural item boundary; pushes settle before flagging. Nothing cuts mid-play.
+- **Per-device auth** - pairing stores a token; every hello is verified against it. Displays mint one automatically when configured manually.
+- **Conductor (in progress)** - arm/go staging for synchronized multi-display performances.
+
+## Quick start
+
+```sh
+docker run -p 8090:8080 -v screensemble-data:/app/data \
+  ghcr.io/screensemble/screensemble-server
+# or from source:
+npm ci && PORT=8090 npm start
 ```
 
-Or with Docker:
+Open `http://<host>:8090/` — fleet list, per-display admin, media library, shared playlists, pairing.
 
-```bash
-docker build -t screensemble-server .
-docker run -p 8090:8080 -v screensemble-data:/app/data screensemble-server
-```
+Requirements: Node.js >= 20 or Docker. Registry, playlists, library, and staged uploads all live in the `data` volume at `/app/data` — backup is copying it.
 
-The container image is published to
-`ghcr.io/screensemble/screensemble-server` on each release.
+## How it works
 
-Dashboard: `http://<host>:<port>/` — fleet list, per-display admin,
-media library, shared playlists, pairing.
+1. **Pair displays** - open the player's setup QR on a phone (or the server's pair page), confirm on the TV. The display registers and dials out.
+2. **Feed the library** - upload media to the server's library; it stays there permanently, reusable for any display.
+3. **Compose playlists** - order library items, assign displays, sync. Missing files push themselves; extras can be pruned for an exact match.
+4. **Displays stay intentional** - every display keeps playing cached content through server restarts and network drops, and picks changes up at the next item boundary.
 
-## What it does
+## Configuration
 
-- **Fleet registry** — persistent player records (`data/players.json`):
-  hardware-anchored identity, labels, online/last-seen, status echo,
-  per-device auth tokens (first-come bound, verified every connect).
-- **Per-display admin** — `display.html?id=…` proxies the player's full
-  local admin surface over its socket: playlist ordering, enable/disable,
-  durations, schedules, shuffle, URL items, uploads, settings, system
-  status, restart commands.
-- **Media library** — `data/library/` keeps a server-side copy of every
-  upload, reusable across displays (`library.html`).
-- **Shared playlists** — named ordered groups assigned to displays; sync
-  pushes missing files, applies order, and can prune extras for an exact
-  match.
-- **Upload queue** — browser uploads and library pushes ride a `pull_file`
-  handshake: the display downloads from the server over HTTP with per-file
-  progress and SHA-256 verification. Still outbound-only.
-- **Pairing** — `/api/pair/*` enrollment: version gating on both sides,
-  then an on-TV confirm before the display is registered.
-- **Content updates are deferred** — playlist/media changes queue on the
-  display and apply at the next natural item boundary; sync pushes settle
-  before flagging, so nothing cuts mid-play.
-
-## Layout
-
-- `src/` — server modules (see `AGENTS.md` for the per-file map)
-- `public/` — dashboard pages
-- `data/` — runtime state (gitignored; mount a volume in Docker)
-
-## Environment
-
-| Var | Default | Purpose |
-|---|---|---|
+| Variable | Default | Purpose |
+|----------|---------|---------|
 | `PORT` | `8080` | HTTP + WebSocket port |
-| `HOST` | `0.0.0.0` | bind address |
+| `HOST` | `0.0.0.0` | Bind address |
 | `SERVER_ROLE` | `manager` | `manager` or `controller` |
+
+## Development
+
+```sh
+npm ci
+npm run dev        # --watch reload
+```
+
+Dashboard pages are plain static files in `public/`; server modules live
+in `src/` (see `AGENTS.md` for the per-file map).
+
+## Releasing
+
+Publish a GitHub Release tagged to match `package.json`'s `version` (e.g.
+`v0.1.0`) and Actions builds and pushes
+`ghcr.io/screensemble/screensemble-server` tagged `:v<ver>`,
+`:<major.minor>`, and `:latest`.
+
+## License
+
+[MIT](LICENSE)
