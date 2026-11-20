@@ -12,6 +12,10 @@ export const players = registry.players;  // registered players (persisted)
 const pending = new Map();                // pairing_id -> offer awaiting TV confirm
 const PAIR_TTL = 10 * 60 * 1000;
 
+// /request is the only pre-auth endpoint — a display posts it before it has
+// any credentials. Everything else is session-gated behind the login.
+export const pairingPublicRouter = Router();
+
 function vtuple(v) {
   return String(v ?? '')
     .split('.')
@@ -37,7 +41,7 @@ function sweep() {
   }
 }
 
-pairingRouter.post('/request', (req, res) => {
+pairingPublicRouter.post('/request', (req, res) => {
   sweep();
   const { product, version, name, client_url, token } = req.body ?? {};
   if (product !== 'screensemble-client') {

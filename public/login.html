@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Screensemble — sign in</title>
+<link rel="icon" href="/favicon.ico">
+<style>
+  :root {
+    --navy: #0a1428; --card: #10203c; --edge: #1d3a63;
+    --cyan: #3ec1f3; --text: #dde3e8; --dim: #7a9bb8; --err: #e8694a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center;
+         justify-content: center; background:
+         radial-gradient(ellipse 70% 55% at 50% 20%, rgba(62,193,243,.10), transparent 70%),
+         #000; color: var(--text); font: 15px/1.5 system-ui, sans-serif; }
+  .card { width: min(380px, 92vw); background: var(--card);
+          border: 1px solid var(--edge); border-radius: 14px;
+          padding: 34px 32px 28px; box-shadow: 0 24px 70px rgba(0,0,0,.55); }
+  .brand { display: flex; flex-direction: column; align-items: center; gap: 10px;
+           margin-bottom: 26px; }
+  .brand img.logo { height: 72px; }
+  .brand img.mark { height: 18px; }
+  label { display: block; font-size: 12px; font-weight: 600; letter-spacing: .06em;
+          text-transform: uppercase; color: var(--dim); margin: 14px 0 6px; }
+  input { width: 100%; background: #0a1428; border: 1px solid var(--edge);
+          border-radius: 8px; color: var(--text); font: 15px system-ui;
+          padding: 11px 13px; outline: none; }
+  input:focus { border-color: var(--cyan); }
+  button { width: 100%; margin-top: 22px; background: var(--cyan); color: #06121d;
+           border: 0; border-radius: 8px; padding: 12px; font: 700 15px system-ui;
+           cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  .err { color: var(--err); font-size: 13px; min-height: 18px; margin-top: 12px;
+         text-align: center; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="brand">
+    <img class="logo" src="/logo.png" alt="Screensemble">
+    <img class="mark" src="/wordmark.png" alt="Screensemble">
+  </div>
+  <form id="f">
+    <label for="u">Username</label>
+    <input id="u" autocomplete="username" required autofocus>
+    <label for="p">Password</label>
+    <input id="p" type="password" autocomplete="current-password" required>
+    <button id="btn" type="submit">Sign in</button>
+  </form>
+  <div class="err" id="err"></div>
+</div>
+<script>
+const err = m => document.getElementById('err').textContent = m || '';
+document.getElementById('f').onsubmit = async e => {
+  e.preventDefault();
+  const btn = document.getElementById('btn');
+  btn.disabled = true; err('');
+  try {
+    const r = await fetch('/api/auth/sign-in/username', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: document.getElementById('u').value.trim(),
+        password: document.getElementById('p').value,
+      }),
+    });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      err(j.message || 'Invalid username or password');
+      return;
+    }
+    const me = await (await fetch('/api/me')).json().catch(() => null);
+    if (me && me.must_change_password) {
+      location.href = '/change-password.html';
+      return;
+    }
+    const next = new URLSearchParams(location.search).get('next');
+    location.href = next && next.startsWith('/') ? next : '/';
+  } catch {
+    err('Could not reach the server');
+  } finally {
+    btn.disabled = false;
+  }
+};
+</script>
+</body>
+</html>

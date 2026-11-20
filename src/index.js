@@ -1,9 +1,20 @@
 import { createServer } from 'node:http';
 import express from 'express';
 import { WebSocketServer } from 'ws';
+import { toNodeHandler, fromNodeHeaders } from 'better-auth/node';
+import {
+  auth,
+  clearChange,
+  fileAllowed,
+  flagChange,
+  mustChange,
+  seedDefaultUser,
+  sessionOf,
+  triggerTokenOk,
+} from './auth.js';
 import { config } from './config.js';
 import { triggerRouter } from './triggers.js';
-import { pairingRouter } from './pairing.js';
+import { pairingPublicRouter, pairingRouter } from './pairing.js';
 import {
   handlePlayerConnection,
   livePlayerIds,
@@ -36,9 +47,14 @@ import {
 import { statSync } from 'node:fs';
 
 const app = express();
-app.use(express.json());
-app.use(express.static('public'));
 
+// Better Auth owns /api/auth/* — mounted before express.json() so it can
+// read request bodies itself.
+app.all('/api/auth/*', toNodeHandler(auth));
+
+app.use(express.json());
+
+// -- Open endpoints (no session) -------------------------------------------
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', role: config.serverRole });
 });
@@ -57,8 +73,194 @@ app.get('/api/info', (_req, res) => {
   });
 });
 
+// Displays post here before they hold credentials — the only open mutation.
+app.use('/api/pair', pairingPublicRouter);
+
+// Display file pulls carry the per-device pairing token in the URL; logged-in
+// users may also fetch (thumbnails). See fileAllowed().
+app.get('/api/library/file/:name', async (req, res) => {
+  if (!(await fileAllowed(req))) {
+    return res.status(401).json({ error: 'authentication required' });
+  }
+  serveItem(req.params.name, res);
+});
+
+app.get('/api/uploads/file/:fileId', async (req, res) => {
+  if (!(await fileAllowed(req))) {
+    return res.status(401).json({ error: 'authentication required' });
+  }
+  serveStaged(req.params.fileId, res);
+});
+
+// Hardware triggers authenticate with a bearer player token / TRIGGER_TOKEN,
+// or fall through to the dashboard session.
+app.use('/api/triggers', async (req, res, next) => {
+  if (triggerTokenOk(req) || (await sessionOf(req))) return next();
+  res.status(401).json({ error: 'trigger authentication required' });
+});
 app.use('/api/triggers', triggerRouter);
-app.use('/api/pair', pairingRouter);
+
+// -- Session guard ----------------------------------------------------------
+// Everything below requires a logged-in user. Assets the login and
+// change-password pages need stay open.
+const OPEN_PATHS = new Set([
+  '/login.html',
+  '/change-password.html',
+  '/favicon.ico',
+  '/logo.png',
+  '/wordmark.png',
+  '/upload-toast.js',
+]);
+
+app.use(async (req, res, next) => {
+  if (OPEN_PATHS.has(req.path)) return next();
+  const user = await sessionOf(req);
+  if (!user) {
+    if (req.path.startsWith('/api/')) {
+      return res.status(401).json({ error: 'authentication required' });
+    }
+    return res.redirect(
+      `/login.html?next=${encodeURIComponent(req.originalUrl || '/')}`,
+    );
+  }
+  req.user = user;
+  // Forced first-login (or admin-reset) password change — everything is
+  // locked to the change-password page until it's done.
+  if (
+    mustChange(user.id) &&
+    req.path !== '/change-password.html' &&
+    !req.path.startsWith('/api/me')
+  ) {
+    if (req.path.startsWith('/api/')) {
+      return res.status(428).json({ error: 'password change required' });
+    }
+    return res.redirect(
+      `/change-password.html?next=${encodeURIComponent(req.originalUrl || '/')}`,
+    );
+  }
+  next();
+});
+
+app.use(express.static('public'));
+app.use('/api/pair', pairingRouter); // accept/decline/pending — session-gated
+
+// -- Account ---------------------------------------------------------------
+app.get('/api/me', (req, res) => {
+  res.json({
+    id: req.user.id,
+    username: req.user.username ?? req.user.name,
+    name: req.user.name,
+    role: req.user.role ?? 'user',
+    must_change_password: mustChange(req.user.id),
+  });
+});
+
+// Atomic password change — the forced-change flag only clears after a
+// successful change, so a failed attempt can't unlock the session.
+app.post('/api/me/set-password', async (req, res) => {
+  const { current_password, new_password } = req.body ?? {};
+  if (!current_password || !new_password) {
+    return res
+      .status(400)
+      .json({ error: 'current and new password required' });
+  }
+  try {
+    await auth.api.changePassword({
+      headers: fromNodeHeaders(req.headers),
+      body: {
+        currentPassword: current_password,
+        newPassword: new_password,
+        revokeOtherSessions: true,
+      },
+    });
+  } catch (e) {
+    return res
+      .status(400)
+      .json({ error: e?.body?.message || e.message || 'password change failed' });
+  }
+  clearChange(req.user.id);
+  res.json({ ok: true });
+});
+
+// -- User management (admin only) -------------------------------------------
+function requireAdmin(req, res, next) {
+  if (req.user?.role !== 'admin') {
+    return res.status(403).json({ error: 'admin required' });
+  }
+  next();
+}
+
+app.get('/api/users', requireAdmin, async (req, res) => {
+  const out = await auth.api.listUsers({
+    headers: fromNodeHeaders(req.headers),
+    query: {},
+  });
+  const users = (out?.users ?? out ?? []).map((u) => ({
+    id: u.id,
+    username: u.username ?? '',
+    name: u.name ?? '',
+    email: u.email ?? '',
+    role: u.role ?? 'user',
+    must_change_password: mustChange(u.id),
+    created_at: u.createdAt,
+  }));
+  res.json({ users });
+});
+
+app.post('/api/users', requireAdmin, async (req, res) => {
+  const { username: un, password, role } = req.body ?? {};
+  if (!un || !password) {
+    return res.status(400).json({ error: 'username and password required' });
+  }
+  try {
+    const r = await auth.api.createUser({
+      headers: fromNodeHeaders(req.headers),
+      body: {
+        email: `${un}@screensemble.local`,
+        password,
+        name: un,
+        role: role === 'admin' ? 'admin' : 'user',
+        data: { username: un, displayUsername: un },
+      },
+    });
+    const id = r?.user?.id;
+    if (id) flagChange(id); // new users set their own password at first login
+    res.status(201).json({ ok: true, id });
+  } catch (e) {
+    res.status(400).json({ error: e?.body?.message || e.message });
+  }
+});
+
+app.delete('/api/users/:id', requireAdmin, async (req, res) => {
+  if (req.params.id === req.user.id) {
+    return res.status(400).json({ error: 'cannot delete your own account' });
+  }
+  try {
+    await auth.api.removeUser({
+      headers: fromNodeHeaders(req.headers),
+      body: { userId: req.params.id },
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: e?.body?.message || e.message });
+  }
+});
+
+// Admin password reset — user must change it again at next login.
+app.post('/api/users/:id/password', requireAdmin, async (req, res) => {
+  const { password } = req.body ?? {};
+  if (!password) return res.status(400).json({ error: 'password required' });
+  try {
+    await auth.api.setUserPassword({
+      headers: fromNodeHeaders(req.headers),
+      body: { userId: req.params.id, newPassword: password },
+    });
+    flagChange(req.params.id);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: e?.body?.message || e.message });
+  }
+});
 
 // -- Fleet view ----------------------------------------------------------
 // Displays hold a persistent WebSocket to /ws/player — "online" is simply
@@ -234,10 +436,7 @@ app.delete('/api/library/:name', (req, res) => {
   res.json({ ok: true });
 });
 
-// The display's pull target — also serves browser thumbnails.
-app.get('/api/library/file/:name', (req, res) => {
-  serveItem(req.params.name, res);
-});
+
 
 // Copy a library item to one or more displays.
 app.post('/api/library/:name/push', (req, res) => {
@@ -280,11 +479,6 @@ app.get('/api/uploads', (_req, res) => {
   res.json({ jobs: jobList() });
 });
 
-// The display's pull target for staged uploads.
-app.get('/api/uploads/file/:fileId', (req, res) => {
-  serveStaged(req.params.fileId, res);
-});
-
 // Conductor — broadcast arm/go to every connected display. Arm stages
 
 // Conductor — broadcast arm/go to every connected display. Arm stages
@@ -311,6 +505,8 @@ app.delete('/api/players/:id', (req, res) => {
 const server = createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws/player' });
 wss.on('connection', handlePlayerConnection);
+
+await seedDefaultUser();
 
 server.listen(config.port, config.host, () => {
   console.log(

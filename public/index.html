@@ -106,6 +106,7 @@
     <button id="tabPair" onclick="showTab('pair')">Pairing</button>
     <a href="/library.html" style="align-self:center;font-size:14px;font-weight:600;color:var(--dim);text-decoration:none;padding:10px 14px">Library</a>
   </nav>
+  <span id="authchip" class="authchip"></span>
   <div class="right"><span id="onlineCount"></span><span id="serverName"></span></div>
 </header>
 <main>
@@ -162,6 +163,7 @@
 <footer><span id="foot"></span></footer>
 
 <script src="/upload-toast.js"></script>
+<script src="/auth-chip.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 let players = [];

@@ -102,6 +102,7 @@
     <button class="tab" id="tab-settings" onclick="showTab('settings')">Settings</button>
     <button class="tab" id="tab-system" onclick="showTab('system')">System</button>
   </nav>
+  <span id="authchip" class="authchip"></span>
   <div class="right">
     <span class="dot" id="statusDot"></span>
     <span class="muted" id="statusText">connecting…</span>
@@ -552,5 +553,6 @@ loadSettings();
 refresh();
 setInterval(refresh, 5000);
 </script>
+<script src="/auth-chip.js"></script>
 </body>
 </html>

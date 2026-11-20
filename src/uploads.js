@@ -8,6 +8,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { itemSha256 } from './library.js';
+import { registry } from './registry.js';
 import {
   playerBaseUrl,
   sendToPlayer,
@@ -86,10 +87,13 @@ export function pushToPlayer(playerId, name, buffer) {
   files.set(fileId, { path, name, size: buffer.length });
 
   const base = playerBaseUrl(playerId);
+  const token = registry.players.get(playerId)?.token;
   return queuePush(
     playerId,
     name,
-    base && `${base}/api/uploads/file/${fileId}`,
+    base &&
+      `${base}/api/uploads/file/${fileId}` +
+        (token ? `?token=${encodeURIComponent(token)}` : ''),
     buffer.length,
     createHash('sha256').update(buffer).digest('hex'),
   );
@@ -99,10 +103,13 @@ export function pushToPlayer(playerId, name, buffer) {
 // displays reuse it directly (no staging copy needed).
 export function pushLibraryItem(playerId, name, size) {
   const base = playerBaseUrl(playerId);
+  const token = registry.players.get(playerId)?.token;
   return queuePush(
     playerId,
     name,
-    base && `${base}/api/library/file/${encodeURIComponent(name)}`,
+    base &&
+      `${base}/api/library/file/${encodeURIComponent(name)}` +
+        (token ? `?token=${encodeURIComponent(token)}` : ''),
     size,
     itemSha256(name),
   );

@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Screensemble — users</title>
+<link rel="icon" href="/favicon.ico">
+<style>
+  :root {
+    --navy: #0a1428; --card: #10203c; --edge: #1d3a63;
+    --cyan: #3ec1f3; --text: #dde3e8; --dim: #7a9bb8;
+    --ok: #4be08a; --warn: #e8b04a; --err: #e8694a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #000; color: var(--text);
+         font: 15px/1.5 system-ui, sans-serif; }
+  header { display: flex; align-items: center; gap: 14px;
+           padding: 10px 20px; background: linear-gradient(90deg,#0d1b33,#12294d);
+           border-bottom: 2px solid var(--cyan); flex-wrap: wrap; }
+  header .mark { height: 30px; }
+  header .wordmark { height: 20px; }
+  .backlink { color: var(--dim); font: 600 14px system-ui; text-decoration: none; }
+  .backlink:hover { color: var(--text); }
+  main { max-width: 760px; margin: 0 auto; padding: 24px 20px 60px; }
+  .card { background: var(--card); border: 1px solid var(--edge);
+          border-radius: 10px; padding: 18px 20px; margin-bottom: 18px; }
+  h2 { font-size: 15px; margin: 0 0 12px; color: var(--cyan);
+       letter-spacing: .04em; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 11px; letter-spacing: .08em;
+       text-transform: uppercase; color: var(--dim); padding: 6px 8px;
+       border-bottom: 1px solid var(--edge); }
+  td { padding: 9px 8px; border-bottom: 1px solid rgba(29,58,99,.5);
+       font-size: 14px; }
+  tr:last-child td { border-bottom: 0; }
+  .badge { font-size: 10px; font-weight: 700; letter-spacing: .08em;
+           text-transform: uppercase; border-radius: 4px; padding: 2px 7px; }
+  .badge.admin { color: var(--cyan); border: 1px solid var(--cyan); }
+  .badge.user { color: var(--dim); border: 1px solid var(--edge); }
+  .badge.flag { color: var(--warn); border: 1px solid var(--warn); }
+  .rowbtns button { margin-left: 6px; }
+  input, select { background: #0a1428; border: 1px solid var(--edge);
+          border-radius: 6px; color: var(--text); font: 14px system-ui;
+          padding: 8px 10px; outline: none; }
+  input:focus { border-color: var(--cyan); }
+  .btn { background: var(--cyan); color: #06121d; border: 0; border-radius: 6px;
+         padding: 8px 16px; font: 700 13px system-ui; cursor: pointer; }
+  .btn.dim { background: none; border: 1px solid var(--edge); color: var(--dim); }
+  .btn.danger { background: none; border: 1px solid var(--err); color: var(--err); }
+  form.add { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  form.add input { flex: 1; min-width: 140px; }
+  .msg { font-size: 13px; min-height: 18px; margin-top: 10px; }
+  .msg.err { color: var(--err); }
+  .msg.ok { color: var(--ok); }
+  .dimtxt { color: var(--dim); font-size: 12.5px; }
+</style>
+</head>
+<body>
+<header>
+  <img class="mark" src="/logo.png" alt="">
+  <img class="wordmark" src="/wordmark.png" alt="Screensemble">
+  <a class="backlink" href="/">← fleet</a>
+  <a class="backlink" href="/library.html">library</a>
+  <span id="authchip" class="authchip"></span>
+</header>
+<main>
+  <div class="card">
+    <h2>Users</h2>
+    <table>
+      <thead><tr><th>Username</th><th>Role</th><th>Password</th><th></th></tr></thead>
+      <tbody id="rows"><tr><td colspan="4" class="dimtxt">loading…</td></tr></tbody>
+    </table>
+  </div>
+  <div class="card">
+    <h2>Add user</h2>
+    <form class="add" id="add">
+      <input id="nu" placeholder="username" autocomplete="off" required>
+      <input id="np" type="password" placeholder="temporary password" minlength="8" required>
+      <select id="nr"><option value="user">user</option><option value="admin">admin</option></select>
+      <button class="btn" type="submit">Add</button>
+    </form>
+    <p class="dimtxt">New users must set their own password at first login.</p>
+    <div class="msg" id="msg"></div>
+  </div>
+</main>
+<script src="/auth-chip.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g,
+  c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const msg = (m, ok) => { const e = $('msg'); e.textContent = m || ''; e.className = 'msg ' + (ok ? 'ok' : 'err'); };
+
+async function load() {
+  const r = await fetch('/api/users');
+  if (r.status === 403) {
+    $('rows').innerHTML = '<tr><td colspan="4" class="dimtxt">Admin access required.</td></tr>';
+    $('add').style.display = 'none';
+    return;
+  }
+  const { users } = await r.json();
+  $('rows').innerHTML = users.map(u => `
+    <tr data-id="${esc(u.id)}">
+      <td>${esc(u.username || u.name)}</td>
+      <td><span class="badge ${esc(u.role)}">${esc(u.role)}</span></td>
+      <td>${u.must_change_password ? '<span class="badge flag">change required</span>' : '<span class="dimtxt">set</span>'}</td>
+      <td class="rowbtns" style="text-align:right;white-space:nowrap">
+        <button class="btn dim" onclick="resetPw('${esc(u.id)}','${esc(u.username || u.name)}')">reset</button>
+        <button class="btn danger" onclick="delUser('${esc(u.id)}','${esc(u.username || u.name)}')">delete</button>
+      </td>
+    </tr>`).join('') || '<tr><td colspan="4" class="dimtxt">none</td></tr>';
+}
+
+$('add').onsubmit = async e => {
+  e.preventDefault(); msg('');
+  const r = await fetch('/api/users', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      username: $('nu').value.trim(),
+      password: $('np').value,
+      role: $('nr').value,
+    }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { msg(j.error || 'Could not create user'); return; }
+  msg('User created — they will set their own password at first login.', true);
+  $('add').reset(); load();
+};
+
+window.delUser = async (id, name) => {
+  if (!confirm(`Delete user "${name}"?`)) return;
+  const r = await fetch(`/api/users/${id}`, { method: 'DELETE' });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { msg(j.error || 'Could not delete'); return; }
+  msg('User deleted.', true); load();
+};
+
+window.resetPw = async (id, name) => {
+  const pw = prompt(`New temporary password for "${name}" (min 8 chars):`);
+  if (!pw) return;
+  const r = await fetch(`/api/users/${id}/password`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: pw }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { msg(j.error || 'Could not reset password'); return; }
+  msg('Password reset — change required at next login.', true); load();
+};
+
+load();
+</script>
+</body>
+</html>
