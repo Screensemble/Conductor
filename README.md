@@ -42,7 +42,21 @@ npm ci && PORT=8090 npm start
 
 Open `http://<host>:8090/` — fleet list, per-display admin, media library, shared playlists, pairing.
 
-Requirements: Node.js >= 20 or Docker. Registry, playlists, library, and staged uploads all live in the `data` volume at `/app/data` — backup is copying it.
+Requirements: Node.js >= 20 or Docker. Registry, playlists, library, users, and staged uploads all live in the `data` volume at `/app/data` — backup is copying it.
+
+## Sign-in & users
+
+The dashboard and admin APIs require sign-in ([Better Auth](https://better-auth.com) — username auth backed by SQLite in `data/auth.db`; no external identity service needed).
+
+- **First login:** user `screensemble`, password `screensemble` — a password change is forced before anything else is reachable.
+- **User management:** `/users.html` (admin only) — add/delete users, reset passwords. New and reset users must set their own password at first login.
+- **Displays are unaffected:** pairing requests, the player WebSocket, and media pulls keep working without a login — pulls carry the per-device pairing token.
+
+| Variable | Purpose |
+|----------|---------|
+| `AUTH_SECRET` | Session secret (auto-generated & persisted if unset) |
+| `AUTH_DEFAULT_USER` / `AUTH_DEFAULT_PASSWORD` | Seed credentials (defaults `screensemble`/`screensemble`, forced change on first login) |
+| `TRIGGER_TOKEN` | Optional shared bearer token for hardware triggers |
 
 ## How it works
 
