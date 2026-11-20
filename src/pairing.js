@@ -22,10 +22,11 @@ const MAX_PENDING = 50;
 const MAX_INVITES = 50;
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
-// Failed-code throttle: the request endpoint is public, so bound guessing.
+// Failed-code throttle, per client address: the request endpoint is public,
+// so bound guessing without letting one prober lock out every display.
 const FAIL_WINDOW = 60 * 1000;
 const MAX_FAILS = 20;
-let fails = [];
+const fails = new Map();
 
 function vtuple(v) {
   return String(v ?? '')
@@ -49,7 +50,10 @@ function sweep() {
   const now = Date.now();
   for (const [id, p] of pending) if (now - p.at > PAIR_TTL) pending.delete(id);
   for (const [c, i] of invites) if (now - i.at > PAIR_TTL) invites.delete(c);
-  fails = fails.filter((t) => now - t < FAIL_WINDOW);
+  for (const [ip, ts] of fails) {
+    const live = ts.filter((t) => now - t < FAIL_WINDOW);
+    if (live.length) fails.set(ip, live); else fails.delete(ip);
+  }
 }
 
 function newCode() {
@@ -81,14 +85,15 @@ pairingPublicRouter.post('/request', (req, res) => {
       reason: `client v${version || '?'} is below required v${config.minClientVersion}`,
     });
   }
-  if (fails.length >= MAX_FAILS) {
+  const ip = req.ip || req.socket?.remoteAddress || '?';
+  if ((fails.get(ip)?.length ?? 0) >= MAX_FAILS) {
     return res
       .status(429)
       .json({ accepted: false, reason: 'too many attempts — wait a minute' });
   }
   const c = normCode(code);
   if (!c || !invites.has(c)) {
-    fails.push(Date.now());
+    fails.set(ip, [...(fails.get(ip) ?? []), Date.now()]);
     return res.status(403).json({
       accepted: false,
       reason: code
