@@ -32,6 +32,7 @@ import {
 } from './players.js';
 import { registry } from './registry.js';
 import { stageRestore, streamBackup } from './backup.js';
+import { extractFrame } from './frames.js';
 import { repoZip, serveRepoFile } from './repo.js';
 import {
   jobList,
@@ -53,7 +54,7 @@ import {
   putPlaylist,
   syncPlaylist,
 } from './playlists.js';
-import { statSync } from 'node:fs';
+import { statSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const app = express();
@@ -483,6 +484,36 @@ app.delete('/api/library/:name', (req, res) => {
 });
 
 
+
+// Frozen-frame extraction (server-side only — displays never decode a
+// still). GET previews a frame without touching the library; POST saves
+// the frame as a library image that flows through the normal push path.
+app.get('/api/library/:name/frame', async (req, res) => {
+  try {
+    const { buf, mime } = await extractFrame(req.params.name, req.query.t);
+    res.type(mime).send(buf);
+  } catch (e) {
+    res.status(e.message === 'not a video' || e.message === 'invalid name'
+      ? 400 : 502).json({ error: e.message });
+  }
+});
+
+app.post('/api/library/:name/frame', async (req, res) => {
+  try {
+    const { buf } = await extractFrame(req.params.name, req.body?.t);
+    const base = req.params.name.replace(/\.[^.]+$/, '');
+    const out = validName(
+      `${base}@${
+        String(Math.max(Number(req.body?.t) || 0, 0)).replace('.', '_')
+      }s.jpg`,
+    );
+    writeFileSync(itemPath(out), buf);
+    res.json({ ok: true, name: out });
+  } catch (e) {
+    res.status(e.message === 'not a video' || e.message === 'invalid name'
+      ? 400 : 502).json({ error: e.message });
+  }
+});
 
 // Copy a library item to one or more displays.
 app.post('/api/library/:name/push', (req, res) => {

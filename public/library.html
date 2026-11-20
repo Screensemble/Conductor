@@ -49,6 +49,13 @@
   button.danger { background: #8c2f39; }
   button:active { filter: brightness(.85); }
   button.mini { padding: 3px 8px; font-size: 12px; }
+  .framepick { display: flex; gap: 10px; align-items: center;
+    flex-wrap: wrap; padding: 6px 0; }
+  .framepick input { background: #000; border: 1px solid var(--edge);
+    color: var(--text); border-radius: 5px; padding: 4px 7px; font: inherit; }
+  .frameprev { width: 100%; margin-top: 8px; }
+  .frameprev img { max-width: 320px; border-radius: 6px;
+    border: 1px solid var(--edge); }
   .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   label { display: grid; gap: 4px; font-size: 13px; color: var(--dim); margin-bottom: 10px; }
   label.inline { display: flex; gap: 6px; align-items: center; margin: 0; }
@@ -212,9 +219,58 @@ function renderLib() {
       `<tr><td><input type="checkbox" class="libsel" value="${escH(i.name)}"></td>` +
       `<td>${thumbHtml(i)}</td><td><b>${escH(i.name)}</b></td>` +
       `<td class="muted">${escH(i.kind)}</td><td class="num">${fmtSize(i.size)}</td>` +
-      `<td class="num"><button class="mini danger" ` +
+      `<td class="num">` +
+      (i.kind === 'video'
+        ? `<button class="mini" title="extract a still frame" ` +
+          `onclick="frameRow(this, ${jsArg(i.name)})">frame</button> ` : '') +
+      `<button class="mini danger" ` +
       `onclick="delLib(${jsArg(i.name)})">✕</button></td></tr>`
     ).join('') + '</table>';
+}
+
+// Frozen-frame picker: expand a row under the video with a timestamp
+// field + live preview; Save stores it as a library image that pushes
+// like any other asset.
+function frameRow(btn, name) {
+  const tr = btn.closest('tr');
+  if (tr.nextSibling && tr.nextSibling.className === 'framerow') {
+    tr.nextSibling.remove();
+    return;
+  }
+  const row = document.createElement('tr');
+  row.className = 'framerow';
+  row.innerHTML = `<td colspan="6">
+    <div class="framepick">
+      <label>t = <input type="number" class="framet" min="0" step="0.5"
+        value="0" style="width:80px"> s</label>
+      <button class="mini" onclick="framePreview(this, ${jsArg(name)})">preview</button>
+      <button class="mini" onclick="frameSave(this, ${jsArg(name)})">save frame</button>
+      <span class="muted">becomes a still image in the library</span>
+      <div class="frameprev"></div>
+    </div></td>`;
+  tr.after(row);
+}
+
+async function framePreview(btn, name) {
+  const t = btn.closest('.framepick').querySelector('.framet').value;
+  const prev = btn.closest('.framepick').querySelector('.frameprev');
+  prev.innerHTML = '<span class="muted">extracting…</span>';
+  const img = new Image();
+  img.onload = () => { prev.innerHTML = ''; prev.appendChild(img); };
+  img.onerror = () =>
+    prev.innerHTML = '<span class="muted">no frame at that time</span>';
+  img.src = `/api/library/${encodeURIComponent(name)}/frame?t=${encodeURIComponent(t)}`;
+}
+
+async function frameSave(btn, name) {
+  const t = btn.closest('.framepick').querySelector('.framet').value;
+  const d = await api(`/api/library/${encodeURIComponent(name)}/frame`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ t: Number(t) || 0 }),
+  });
+  toast(d.ok ? `saved ${d.name}` : `frame failed: ${d.error}`);
+  refresh();
 }
 
 function renderTargets() {
