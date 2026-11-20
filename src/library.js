@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import {
   createReadStream,
   createWriteStream,
@@ -78,7 +78,9 @@ export function saveItem(name, buffer) {
 export function saveStream(name, req, maxBytes) {
   mkdirSync(DIR, { recursive: true });
   const dest = itemPath(name);
-  const tmp = `${dest}.${process.pid}.${Date.now()}.part`;
+  // Short random dotfile: unique per upload, never near the name-length
+  // limit, and hidden from listings (validName rejects dotfiles).
+  const tmp = join(DIR, `.up-${randomBytes(8).toString('hex')}.part`);
   return new Promise((resolve, reject) => {
     const hash = createHash('sha256');
     const out = createWriteStream(tmp);
