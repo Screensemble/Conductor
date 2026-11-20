@@ -157,7 +157,7 @@
         <label>Device name <input name="device_name"></label>
         <label>Media folder (empty = built-in) <input name="local_media_folder"></label>
         <div class="row">
-          <label style="flex:1">Idle color <input name="idle_color" type="color"></label>
+          <label style="flex:1">Standby color <input name="idle_color" type="color"></label>
           <label style="flex:1">Letterbox color <input name="letterbox_color" type="color"></label>
         </div>
         <label>Scaling
@@ -192,7 +192,7 @@
     <div class="panel">
       <div class="row">
         <button onclick="cmd('restart')">Restart content</button>
-        <button class="secondary" onclick="cmd('restart_app')">Restart player</button>
+        <button class="secondary" onclick="cmd('restart_app')">Restart performer</button>
         <button class="danger" onclick="cmd('stop')">Stop playback</button>
       </div>
       <p class="muted">Commands travel over the display's live socket —
@@ -203,14 +203,14 @@
       <p class="muted">
         <a class="link" id="repoLink" href="#">Download the update-repo installer</a>
         — install this zip on the display once and it will fetch addon
-        updates straight from this server (no internet needed). Refresh
-        the server's <code>data/repo/</code> folder with each release.
+        updates straight from this conductor (no internet needed). Refresh
+        the conductor's <code>data/repo/</code> folder with each release.
       </p>
     </div>
   </section>
 </main>
 <footer>
-  <span>Screensemble server</span>
+  <span>Screensemble Conductor</span>
   <span id="footInfo">—</span>
 </footer>
 <div id="toast"></div>
@@ -219,7 +219,7 @@
 const $ = id => document.getElementById(id);
 const PID = new URLSearchParams(location.search).get('id');
 if (!PID) location.replace('/');
-const API = '/api/players/' + encodeURIComponent(PID);
+const API = '/api/performers/' + encodeURIComponent(PID);
 $('repoLink').href = API + '/repo.zip';
 let settings = {};
 let mediaItems = [];
@@ -257,7 +257,7 @@ async function refresh() {
     $('statusDot').className = 'dot' + (p.online ? ' on' : '');
     const state = !p.online ? 'offline'
                 : s.playing ? 'playing'
-                : s.idle_window ? 'idle'
+                : s.standby_window ? 'idle'
                 : s.maintenance ? 'exited' : 'starting';
     $('statusText').textContent = state + ' · ' + (s.items || 0) + ' item(s)';
     $('playingInfo').textContent = s.maintenance

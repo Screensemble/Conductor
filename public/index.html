@@ -45,7 +45,7 @@
   .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%;
          background: var(--err); }
   .dot.on { background: var(--ok); }
-  .dot.armed { background: var(--warn); }
+  .dot.prepared { background: var(--warn); }
   .name { font-weight: 600; }
   a.name { color: var(--text); text-decoration: none; }
   a.name:hover { color: var(--cyan); text-decoration: underline; }
@@ -82,9 +82,9 @@
   .big button { flex: 1; min-width: 200px; padding: 22px; font-size: 20px;
                 font-weight: 800; border: 0; border-radius: 10px;
                 cursor: pointer; }
-  .big .arm { background: var(--edge); color: var(--text); }
-  .big .arm:hover { background: #2a4a7a; }
-  .big .go { background: linear-gradient(90deg,#1e9be8,#3ec1f3);
+  .big .prepare { background: var(--edge); color: var(--text); }
+  .big .prepare:hover { background: #2a4a7a; }
+  .big .perform { background: linear-gradient(90deg,#1e9be8,#3ec1f3);
              color: var(--navy); }
   a.link { color: var(--cyan); }
   .pad { padding: 14px 16px; }
@@ -131,9 +131,9 @@
     <div class="card">
       <h2>Conductor — synchronized playback</h2>
       <div class="big">
-        <button class="arm" onclick="conduct('arm')">ARM</button>
-        <button class="go" onclick="conduct('go')">GO</button>
-        <button class="arm" onclick="conduct('disarm')">DISARM</button>
+        <button class="prepare" onclick="conduct('prepare')">PREPARE</button>
+        <button class="perform" onclick="conduct('perform')">PERFORM</button>
+        <button class="prepare" onclick="conduct('cancel')">CANCEL</button>
       </div>
       <div class="pad row">
         <label>Release when
@@ -150,7 +150,7 @@
         </label>
       </div>
       <div class="pad dim">
-        Arm probes each display's clock and stages playlist item 1 — videos
+        Prepare probes each display's clock and stages playlist item 1 — videos
         pause on their first frame, images show statically. Go converts one
         release instant into every display's own clock so they all start
         together regardless of socket timing.
@@ -173,7 +173,7 @@
         paired this way can connect.</p>
         <p class="dim">Displays confirm on their own remote, then dial in
         over a persistent connection — they work from any network that can
-        reach this server.</p>
+        reach this conductor.</p>
       </div>
       <h2>Pending offers</h2>
       <div class="pad" id="pending"><span class="dim">none</span></div>
@@ -230,8 +230,8 @@ function ago(iso) {
 }
 
 async function refresh() {
-  const d = await api("/api/players");
-  players = d.players || [];
+  const d = await api("/api/performers");
+  players = d.performers || [];
   render();
   renderReady();
   const online = players.filter(p => p.online).length;
@@ -248,14 +248,14 @@ function render() {
   }
   tb.innerHTML = players.map(p => {
     const st = p.status || {};
-    const dot = p.online ? (st.armed ? "armed" : "on") : "";
+    const dot = p.online ? ((st.prepared ?? st.armed) ? "prepared" : "on") : "";
     const labels = (p.labels || [])
       .map(l => `<span class="chip">${esc(l)}</span>`).join("");
     return `<tr data-id="${esc(p.id)}">
       <td><span class="dot ${dot}"></span></td>
       <td><a class="name" href="/display.html?id=${encodeURIComponent(p.id)}"
           title="manage this display">${esc(p.name || p.id)}</a>${labels}
-          ${st.armed ? '<span class="badge warn">ARMED</span>' : ""}</td>
+          ${(st.prepared ?? st.armed) ? '<span class="badge warn">PREPARED</span>' : ""}</td>
       <td class="dim">${esc(p.client_version || "—")}</td>
       <td class="dim">${ago(p.last_seen)}</td>
       <td>${esc(st.current || (st.playing ? "(playing)" : "—"))}
@@ -274,7 +274,7 @@ function render() {
 }
 
 async function cmd(id, c) {
-  const r = await api(`/api/players/${encodeURIComponent(id)}/command`, {
+  const r = await api(`/api/performers/${encodeURIComponent(id)}/command`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ cmd: c }),
@@ -283,8 +283,8 @@ async function cmd(id, c) {
 }
 
 async function removePlayer(id) {
-  if (!confirm("Remove this display from the server?")) return;
-  await fetch(`/api/players/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!confirm("Remove this display from the conductor?")) return;
+  await fetch(`/api/performers/${encodeURIComponent(id)}`, { method: "DELETE" });
   refresh();
 }
 
@@ -306,7 +306,7 @@ function editLabels(id, btn) {
 async function saveLabels(id) {
   const labels = $(`le_${id}`).value.split(",")
     .map(s => s.trim()).filter(Boolean);
-  await api(`/api/players/${encodeURIComponent(id)}/labels`, {
+  await api(`/api/performers/${encodeURIComponent(id)}/labels`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ labels }),
@@ -324,7 +324,7 @@ async function togglePlaylist(id, btn) {
   tr.className = "sublist";
   tr.innerHTML = `<td colspan="7" class="dim">loading…</td>`;
   row.after(tr);
-  const d = await api(`/api/players/${encodeURIComponent(id)}/media`);
+  const d = await api(`/api/performers/${encodeURIComponent(id)}/media`);
   const items = d.items || [];
   tr.firstChild.innerHTML = items.length
     ? `<table><thead><tr><th>Item</th><th>Kind</th><th>Secs</th>
@@ -341,7 +341,7 @@ async function togglePlaylist(id, btn) {
 }
 
 async function conduct(c) {
-  const body = c === "go" ? {
+  const body = c === "perform" ? {
     policy: $("policy").value,
     min_ready: Number($("minReady").value) || 1,
     lead_ms: Number($("leadMs").value) || 500,
@@ -352,28 +352,28 @@ async function conduct(c) {
     body: JSON.stringify(body),
   });
   if (r.error) toast(`${c.toUpperCase()}: ${r.error}`);
-  else toast(c === "go"
-    ? `GO → released ${Object.values(r.results || {}).filter(x => x.released).length} display(s)`
+  else toast(c === "perform"
+    ? `PERFORM → released ${Object.values(r.results || {}).filter(x => x.released).length} display(s)`
     : `${c.toUpperCase()} → ${r.delivered ?? 0} display(s)`);
   setTimeout(refresh, 500);
 }
 
 async function renderReady() {
   const d = await api("/api/conductor");
-  const rows = d.players || [];
+  const rows = d.performers || [];
   $("readyCount").textContent =
-    d.armed ? `— ${d.ready}/${d.total} staged` : "";
+    d.prepared ? `— ${d.ready}/${d.total} staged` : "";
   const nameOf = (id) =>
     (players.find(p => p.id === id) || {}).name || id;
   $("ready").innerHTML = rows.length ? rows.map(r => {
     return `<tr>
-      <td><span class="dot ${r.online ? (r.armed ? "armed" : "on") : ""}"></span></td>
-      <td><a class="name" href="/display.html?id=${encodeURIComponent(r.player_id)}">${esc(nameOf(r.player_id))}</a></td>
-      <td class="dim">${r.armed ? '<span class="badge warn">ARMED</span>'
+      <td><span class="dot ${r.online ? (r.prepared ? "prepared" : "on") : ""}"></span></td>
+      <td><a class="name" href="/display.html?id=${encodeURIComponent(r.performer_id)}">${esc(nameOf(r.performer_id))}</a></td>
+      <td class="dim">${r.prepared ? '<span class="badge warn">PREPARED</span>'
         : (r.online ? "online" : "offline")}</td>
       <td class="dim">${r.clock ? `±${r.clock.rtt}ms rtt` : "no probe"}</td>
     </tr>`;
-  }).join("") : `<tr><td colspan="4" class="dim">Arm to stage the displays.</td></tr>`;
+  }).join("") : `<tr><td colspan="4" class="dim">Prepare to stage the displays.</td></tr>`;
 }
 
 async function refreshPending() {
@@ -389,7 +389,7 @@ async function boot() {
   const info = await api("/api/info");
   $("serverName").textContent = info.name || "";
   $("foot").textContent =
-    `${info.product || "screensemble-server"} v${info.version || "?"}`;
+    `${info.product || "Screensemble Conductor"} v${info.version || "?"}`;
   refresh();
   refreshPending();
   setInterval(refresh, 3000);

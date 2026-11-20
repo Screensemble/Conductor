@@ -136,10 +136,10 @@ export function tokenEquals(a, b) {
   return x.length > 0 && x.length === y.length && timingSafeEqual(x, y);
 }
 
-function playerTokenOk(tok) {
+function performerTokenOk(tok) {
   if (!tok) return false;
   let ok = false;
-  for (const p of registry.players.values()) {
+  for (const p of registry.performers.values()) {
     if (p.token && tokenEquals(p.token, tok)) ok = true;
   }
   return ok;
@@ -150,18 +150,17 @@ function playerTokenOk(tok) {
 // dashboard users may also fetch (thumbnails/previews).
 export async function fileAllowed(req) {
   const t = String(req.query.token ?? '');
-  if (t) return playerTokenOk(t);
+  if (t) return performerTokenOk(t);
   return !!(await sessionOf(req));
 }
 
-// Bearer token check for hardware triggers (ESP32): any registered player
-// token, or the shared TRIGGER_TOKEN env when set.
-export function triggerTokenOk(req) {
+// Bearer token check for cue devices (ESP32): any registered performer
+// token, or the shared CUE_TOKEN env (legacy TRIGGER_TOKEN still honored).
+export function cueTokenOk(req) {
   const h = String(req.headers.authorization ?? '');
   const bearer = h.startsWith('Bearer ') ? h.slice(7) : '';
   const tok = bearer || String(req.query.token ?? '');
-  if (process.env.TRIGGER_TOKEN && tokenEquals(tok, process.env.TRIGGER_TOKEN)) {
-    return true;
-  }
-  return playerTokenOk(tok);
+  const shared = process.env.CUE_TOKEN || process.env.TRIGGER_TOKEN;
+  if (shared && tokenEquals(tok, shared)) return true;
+  return performerTokenOk(tok);
 }

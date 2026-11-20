@@ -3,7 +3,7 @@ import { tokenEquals } from './auth.js';
 import { hardwareKey } from './pairing.js';
 import { registry } from './registry.js';
 
-// Player WebSocket endpoint (/ws/player). Displays dial OUT to the server
+// Performer WebSocket endpoint (/ws/player). Displays dial OUT to the server
 // and hold one persistent socket — enrollment, status reports, commands
 // and request/response all travel over it, so managed displays work from
 // anywhere without inbound connectivity (spec sections 2 and 4).
@@ -20,7 +20,7 @@ import { registry } from './registry.js';
 
 const live = new Map();        // player_id -> ws
 const pendingReq = new Map();  // req_id -> { resolve, timer }
-const pendingPing = new Map(); // nonce  -> { resolve, timer, t0, playerId }
+const pendingPing = new Map(); // nonce  -> { resolve, timer, t0, performerId }
 const clock = new Map();       // player_id -> { mono, rtt, at } best sample
 let onPushProgress = () => {}; // set by uploads.js
 
@@ -31,7 +31,7 @@ export function setPushProgressHandler(fn) {
 // The server address as the display sees it — PUBLIC_URL when set (reverse
 // proxies), else the Host the display dialed for its WebSocket upgrade, so
 // pull_file URLs survive Docker port mapping and NAT.
-export function playerBaseUrl(id) {
+export function performerBaseUrl(id) {
   if (process.env.PUBLIC_URL) return process.env.PUBLIC_URL.replace(/\/+$/, '');
   return live.get(id)?.baseUrl ?? null;
 }
@@ -45,17 +45,17 @@ function baseUrlOf(req) {
   return `${https ? 'https' : 'http'}://${host}`;
 }
 
-function reject(ws, playerId, remote, why) {
+function reject(ws, performerId, remote, why) {
   ws.send(
     JSON.stringify({ type: 'hello_ack', player_id: null, error: 'unauthorized' }),
   );
   try { ws.close(); } catch { /* already gone */ }
-  console.log(`player rejected (${why}): ${playerId || '?'} (${remote})`);
+  console.log(`performer rejected (${why}): ${performerId || '?'} (${remote})`);
 }
 
-export function handlePlayerConnection(ws, req) {
+export function handlePerformerConnection(ws, req) {
   const remote = req.socket.remoteAddress;
-  let playerId = null;
+  let performerId = null;
 
   ws.on('message', (data) => {
     let msg;
@@ -71,34 +71,34 @@ export function handlePlayerConnection(ws, req) {
       // hello must carry the token issued at pairing.
       const hw = hardwareKey(msg.hardware_id);
       const candidate =
-        (hw && registry.players.has(hw) && hw) ||
-        (msg.pairing_id && registry.players.has(String(msg.pairing_id))
+        (hw && registry.performers.has(hw) && hw) ||
+        (msg.pairing_id && registry.performers.has(String(msg.pairing_id))
           ? String(msg.pairing_id)
           : null);
-      const known = candidate ? registry.players.get(candidate) : null;
+      const known = candidate ? registry.performers.get(candidate) : null;
       if (!known) return reject(ws, hw, remote, 'not paired');
       if (!known.token || !tokenEquals(msg.token, known.token)) {
         return reject(ws, candidate, remote, 'bad token');
       }
-      playerId = candidate;
+      performerId = candidate;
       ws.baseUrl = baseUrlOf(req);
       // One socket per display — a re-hello replaces the stale binding.
-      const prevWs = live.get(playerId);
+      const prevWs = live.get(performerId);
       if (prevWs && prevWs !== ws) {
         try { prevWs.close(); } catch { /* already gone */ }
       }
-      live.set(playerId, ws);
-      registry.upsert(playerId, {
+      live.set(performerId, ws);
+      registry.upsert(performerId, {
         name: String(msg.name || '').slice(0, 100),
         client_version: String(msg.version || '').slice(0, 20),
         online: true,
         last_seen: new Date().toISOString(),
       });
-      ws.send(JSON.stringify({ type: 'hello_ack', player_id: playerId }));
-      console.log(`player online: ${playerId} (${msg.name || remote})`);
+      ws.send(JSON.stringify({ type: 'hello_ack', player_id: performerId }));
+      console.log(`performer online: ${performerId} (${msg.name || remote})`);
       return;
     }
-    if (!playerId) return; // must hello first
+    if (!performerId) return; // must hello first
 
     // Any reply carrying a request id resolves its waiter — covers
     // command_result, media, settings, media_op_result, file, …
@@ -110,7 +110,7 @@ export function handlePlayerConnection(ws, req) {
       return;
     }
     if (msg.type === 'push_progress') {
-      onPushProgress(playerId, msg);
+      onPushProgress(performerId, msg);
       return;
     }
     if (msg.type === 'clock_pong' && pendingPing.has(msg.nonce)) {
@@ -121,15 +121,15 @@ export function handlePlayerConnection(ws, req) {
       // Keep the lowest-RTT sample — asymmetric latency only ever inflates
       // it, so the fastest round trip is the best estimate of the display's
       // monotonic clock at receive time.
-      const prev = clock.get(playerId);
+      const prev = clock.get(performerId);
       if (!prev || rtt <= prev.rtt) {
-        clock.set(playerId, { mono: msg.mono, rtt, at: Date.now() });
+        clock.set(performerId, { mono: msg.mono, rtt, at: Date.now() });
       }
       p.resolve({ mono: msg.mono, rtt });
       return;
     }
 
-    registry.touch(playerId, {
+    registry.touch(performerId, {
       online: true,
       last_seen: new Date().toISOString(),
       ...(msg.type === 'status' && msg.status && typeof msg.status === 'object'
@@ -142,12 +142,12 @@ export function handlePlayerConnection(ws, req) {
   ws.on('pong', () => { ws.isAlive = true; });
 
   ws.on('close', () => {
-    if (!playerId) return;
-    if (live.get(playerId) === ws) {
-      live.delete(playerId);
-      registry.touch(playerId, { online: false });
+    if (!performerId) return;
+    if (live.get(performerId) === ws) {
+      live.delete(performerId);
+      registry.touch(performerId, { online: false });
     }
-    console.log(`player offline: ${playerId}`);
+    console.log(`performer offline: ${performerId}`);
   });
 }
 
@@ -166,21 +166,21 @@ export function startHeartbeat(wss, everyMs = 30_000) {
 }
 
 // Drop a display's live socket (used when it's removed from the registry).
-export function disconnectPlayer(id) {
+export function disconnectPerformer(id) {
   const ws = live.get(id);
   if (ws) { live.delete(id); try { ws.close(); } catch { /* gone */ } }
 }
 
-export function playerOnline(id) {
+export function performerOnline(id) {
   return live.has(id);
 }
 
-export function livePlayerIds() {
+export function livePerformerIds() {
   return [...live.keys()];
 }
 
 // Fire-and-forget message to a connected display.
-export function sendToPlayer(id, obj) {
+export function sendToPerformer(id, obj) {
   const ws = live.get(id);
   if (!ws) return false;
   ws.send(JSON.stringify(obj));
@@ -189,7 +189,7 @@ export function sendToPlayer(id, obj) {
 
 // Request/response — resolves with the display's reply message (matched
 // by its echoed id) or rejects on timeout/offline.
-export function requestFromPlayer(id, obj, timeoutMs = 8000) {
+export function requestFromPerformer(id, obj, timeoutMs = 8000) {
   const ws = live.get(id);
   if (!ws) return Promise.reject(new Error('display offline'));
   const reqId = randomBytes(6).toString('hex');
@@ -220,7 +220,7 @@ export function probeClock(id, samples = 3, timeoutMs = 2000) {
         else reject(new Error('clock probe timed out'));
       }, timeoutMs);
       pendingPing.set(nonce, {
-        playerId: id,
+        performerId: id,
         t0: Date.now(),
         timer,
         resolve: (r) => {

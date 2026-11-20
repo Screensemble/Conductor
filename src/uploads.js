@@ -10,10 +10,10 @@ import { join } from 'node:path';
 import { itemSha256 } from './library.js';
 import { registry } from './registry.js';
 import {
-  playerBaseUrl,
-  sendToPlayer,
+  performerBaseUrl,
+  sendToPerformer,
   setPushProgressHandler,
-} from './players.js';
+} from './performers.js';
 
 // Upload queue — browsers POST files to the server; each job stages the
 // file under data/uploads/ and tells the display to pull it back over
@@ -37,7 +37,7 @@ function sweep() {
 // Display → server progress frames land here via players.js.
 setPushProgressHandler((playerId, msg) => {
   const job = jobs.get(msg.job);
-  if (!job || job.player !== playerId) return;
+  if (!job || job.performer !== playerId) return;
   job.received = msg.received ?? job.received;
   job.total = msg.total || job.total;
   job.ts = Date.now();
@@ -53,7 +53,7 @@ setPushProgressHandler((playerId, msg) => {
 function queuePush(playerId, name, url, total, sha256) {
   const job = {
     id: randomBytes(6).toString('hex'),
-    player: playerId,
+    performer: playerId,
     name,
     total: total || 0,
     received: 0,
@@ -63,7 +63,7 @@ function queuePush(playerId, name, url, total, sha256) {
   jobs.set(job.id, job);
   const sent =
     url &&
-    sendToPlayer(playerId, {
+    sendToPerformer(playerId, {
       type: 'pull_file',
       id: job.id,
       name,
@@ -86,8 +86,8 @@ export function pushToPlayer(playerId, name, buffer) {
   writeFileSync(path, buffer);
   files.set(fileId, { path, name, size: buffer.length });
 
-  const base = playerBaseUrl(playerId);
-  const token = registry.players.get(playerId)?.token;
+  const base = performerBaseUrl(playerId);
+  const token = registry.performers.get(playerId)?.token;
   return queuePush(
     playerId,
     name,
@@ -102,8 +102,8 @@ export function pushToPlayer(playerId, name, buffer) {
 // Push a library file — the library URL is permanent, so copies to other
 // displays reuse it directly (no staging copy needed).
 export function pushLibraryItem(playerId, name, size) {
-  const base = playerBaseUrl(playerId);
-  const token = registry.players.get(playerId)?.token;
+  const base = performerBaseUrl(playerId);
+  const token = registry.performers.get(playerId)?.token;
   return queuePush(
     playerId,
     name,

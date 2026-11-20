@@ -88,11 +88,11 @@
   .plitem .t { flex: 1; overflow: hidden; text-overflow: ellipsis;
                white-space: nowrap; }
   .plitem .k { color: var(--dim); font-size: 11px; }
-  .dplayer { font-size: 13px; padding: 4px 8px; border: 1px solid var(--edge);
+  .dperf { font-size: 13px; padding: 4px 8px; border: 1px solid var(--edge);
              border-radius: 6px; display: inline-flex; gap: 6px;
              align-items: center; }
-  .dplayer .dot { width: 8px; height: 8px; border-radius: 50%; background: #4a5e78; }
-  .dplayer .dot.on { background: #4caf50; }
+  .dperf .dot { width: 8px; height: 8px; border-radius: 50%; background: #4a5e78; }
+  .dperf .dot.on { background: #4caf50; }
   .syncres { font-size: 12px; color: var(--dim); margin-top: 8px; }
 </style>
 </head>
@@ -110,7 +110,7 @@
 
   <!-- ============ Library ============ -->
   <section>
-    <h2>Media library <small>files live on the server — push to any display</small></h2>
+    <h2>Media library <small>files live on the conductor — push to any display</small></h2>
     <div class="panel row">
       <input type="file" id="upFiles" multiple>
       <button onclick="uploadFiles()">Upload to library</button>
@@ -199,10 +199,10 @@ function fmtSize(b) { return (b / 1048576).toFixed(1) + ' MB'; }
 
 async function refresh() {
   const [l, p, pl] = await Promise.all([
-    api('/library'), api('/players'), api('/playlists'),
+    api('/library'), api('/performers'), api('/playlists'),
   ]);
   libItems = l.items || [];
-  players = (p.players || []).filter(x => x.online);
+  players = (p.performers ?? p.players ?? []).filter(x => x.online);
   playlists = pl.playlists || {};
   renderLib(); renderTargets(); renderPlList(); renderPlEditor();
 }
@@ -276,7 +276,7 @@ async function frameSave(btn, name) {
 function renderTargets() {
   $('pushTargets').innerHTML = players.length
     ? players.map(p =>
-        `<label class="inline dplayer"><span class="dot${p.online ? ' on' : ''}"></span>` +
+        `<label class="inline dperf"><span class="dot${p.online ? ' on' : ''}"></span>` +
         `<input type="checkbox" class="pushtarget" value="${escH(p.id)}">` +
         `${escH(p.name || p.id)}</label>`).join('')
     : '<span class="muted">no displays online</span>';
@@ -367,7 +367,7 @@ function renderPlEditor() {
   $('plPlayers').innerHTML = '<b>Displays:</b>' + (
     players.length
       ? players.map(p =>
-          `<label class="inline dplayer"><span class="dot${p.online ? ' on' : ''}"></span>` +
+          `<label class="inline dperf"><span class="dot${p.online ? ' on' : ''}"></span>` +
           `<input type="checkbox" class="plpid" value="${escH(p.id)}" ` +
           `${plPids.has(p.id) ? 'checked' : ''}>${escH(p.name || p.id)}</label>`
         ).join('')

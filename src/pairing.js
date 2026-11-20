@@ -13,7 +13,7 @@ import { registry } from './registry.js';
 //      /decline) with the pairing_id and receives its per-device token.
 export const pairingRouter = Router();        // session-gated
 export const pairingPublicRouter = Router();  // reached by displays
-export const players = registry.players;
+export const players = registry.performers;
 
 const pending = new Map();   // pairing_id -> offer awaiting TV confirm
 const invites = new Map();   // code -> { at, by }
@@ -144,7 +144,7 @@ pairingPublicRouter.post('/accept', (req, res) => {
   pending.delete(offer.id);
   const playerId = hardwareKey(offer.hardware_id);
   const token = randomBytes(24).toString('hex');
-  const prev = registry.players.get(playerId);
+  const prev = registry.performers.get(playerId);
   registry.upsert(playerId, {
     client_url: offer.client_url,
     name: offer.name,
@@ -154,7 +154,7 @@ pairingPublicRouter.post('/accept', (req, res) => {
     labels: prev?.labels ?? [],
     paired_at: new Date().toISOString(),
   });
-  console.log(`player paired: ${offer.name || playerId}`);
+  console.log(`performer paired: ${offer.name || playerId}`);
   res.json({ ok: true, player_id: playerId, token });
 });
 

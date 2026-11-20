@@ -1,4 +1,4 @@
-// Renders the signed-in user chip into #authchip (present on dashboard pages):
+// Renders the signed-in user chip into #authchip (present on Control Room pages):
 // username, link to user management, and sign-out.
 (async () => {
   const host = document.getElementById('authchip');

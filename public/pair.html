@@ -46,9 +46,9 @@
 <body>
 <div class="card">
   <div class="step" id="step">PAIR A DISPLAY</div>
-  <h1 id="title">Connect a display to this server</h1>
+  <h1 id="title">Connect a display to this conductor</h1>
   <p class="dim" id="desc">Scan the QR code on the display's setup screen.
-     This server pushes its address to the display, which then asks for
+     This conductor pushes its address to the display, which then asks for
      confirmation on its own remote.</p>
   <div id="body"></div>
   <div class="err" id="err"></div>
@@ -74,12 +74,12 @@ function showError(msg) { $("err").textContent = msg || ""; }
 async function stepServer() {
   try { await getInvite(); } catch (e) { showError(e.message); return; }
   $("body").innerHTML = `
-    <label>This server's address (as the display should reach it)</label>
-    <input id="server_url" value="${esc(location.host)}">
+    <label>This conductor's address (as the display should reach it)</label>
+    <input id="conductor_url" value="${esc(location.host)}">
     <label>Pairing code (single use, valid 10 minutes)</label>
     <div class="code" id="code">${esc(fmtCode(inviteCode))}</div>
     <div class="hint">Using the display's phone setup page instead? Enter
-      this server address and code there.</div>
+      this conductor address and code there.</div>
     <button onclick="stepScan()">Scan display QR code</button>
     <button class="ghost" onclick="stepManual()">Enter QR contents manually</button>
     <div class="hint">Camera scanning needs Chrome/Edge (BarcodeDetector).</div>`;
@@ -146,23 +146,23 @@ function onScan(raw) {
   stopCam();
   client = { base: u.origin, token };
 
-  const s = encodeURIComponent($("server_url") ? $("server_url").value : location.host);
+  const s = encodeURIComponent($("conductor_url") ? $("conductor_url").value : location.host);
   const a = encodeURIComponent(inviteCode);
   // New tab hits the display's /pair endpoint and closes itself — no CORS.
-  // s= can be any URL, so a cloud-hosted server works the same way.
+  // s= can be any URL, so a cloud-hosted conductor works the same way.
   window.open(`${client.base}/pair?s=${s}&a=${a}&t=${encodeURIComponent(client.token)}`, "_blank");
 
   $("title").textContent = "Confirm on the display";
   $("desc").innerHTML = `The display at <code>${esc(client.base)}</code> is now
-    asking whether to accept this server. Press <b>Pair</b> on the display's
-    remote to finish — this page returns to the dashboard when it does.`;
+    asking whether to accept this conductor. Press <b>Pair</b> on the display's
+    remote to finish — this page returns to the Control Room when it does.`;
   $("body").innerHTML = `
     <button class="ghost" onclick="location.reload()">Pair another display</button>`;
   watchOutcome();
 }
 
-// Poll until the display answers: accept registers the player (→
-// dashboard), decline/expiry drops the pending offer (→ message).
+// Poll until the display answers: accept registers the performer (→
+// the Control Room), decline/expiry drops the pending offer (→ message).
 function watchOutcome() {
   const base = client.base.replace(/\/$/, "");
   let sawPending = false;
@@ -171,11 +171,11 @@ function watchOutcome() {
     if (Date.now() - started > 120000) { clearInterval(t); return; }
     try {
       const [players, pending] = await Promise.all([
-        fetch("/api/players").then(r => r.json()),
+        fetch("/api/performers").then(r => r.json()),
         fetch("/api/pair/pending").then(r => r.json()),
       ]);
       const mine = u => (u || "").replace(/\/$/, "") === base;
-      if ((players.players || []).some(p => mine(p.client_url))) {
+      if (((players.performers ?? players.players) || []).some(p => mine(p.client_url))) {
         clearInterval(t);
         location.href = "/";
         return;
@@ -188,7 +188,7 @@ function watchOutcome() {
         $("desc").textContent =
           "The display cancelled the pairing request.";
       }
-    } catch (e) { /* server hiccup — keep waiting */ }
+    } catch (e) { /* conductor hiccup — keep waiting */ }
   }, 2000);
 }
 

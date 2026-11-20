@@ -6,7 +6,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { requestFromPlayer } from './players.js';
+import { requestFromPerformer } from './performers.js';
 import { pushLibraryItem } from './uploads.js';
 import { hasItem, itemPath } from './library.js';
 
@@ -35,7 +35,7 @@ export function listPlaylists() {
 export function putPlaylist(name, data) {
   playlists[name] = {
     items: (Array.isArray(data.items) ? data.items : []).map(String),
-    players: (Array.isArray(data.players) ? data.players : []).map(String),
+    performers: (Array.isArray(data.performers ?? data.players) ? (data.performers ?? data.players) : []).map(String),
     updated: Date.now(),
   };
   save();
@@ -51,11 +51,11 @@ export async function syncPlaylist(name, { prune = false } = {}) {
   const pl = playlists[name];
   if (!pl) return { error: 'unknown playlist' };
   const results = {};
-  for (const pid of pl.players) {
+  for (const pid of pl.performers ?? pl.players) {
     const r = { ok: true, pushed: [], pruned: [], missing: [] };
     results[pid] = r;
     try {
-      const media = await requestFromPlayer(
+      const media = await requestFromPerformer(
         pid,
         { type: 'get_media' },
         10000,
@@ -74,7 +74,7 @@ export async function syncPlaylist(name, { prune = false } = {}) {
       }
       // The order op is name-keyed — each arriving file rescans and the
       // stored order re-applies, so it's safe to set before pushes land.
-      await requestFromPlayer(pid, {
+      await requestFromPerformer(pid, {
         type: 'media_op',
         op: 'order',
         order: pl.items,
@@ -82,7 +82,7 @@ export async function syncPlaylist(name, { prune = false } = {}) {
       if (prune) {
         for (const i of items) {
           if (!pl.items.includes(i.name) && !i.remote) {
-            await requestFromPlayer(pid, {
+            await requestFromPerformer(pid, {
               type: 'media_op',
               op: 'delete',
               name: i.name,
@@ -93,7 +93,7 @@ export async function syncPlaylist(name, { prune = false } = {}) {
       }
       // 'update' defers to the next item boundary — pushes still in
       // flight re-queue the flag themselves once the batch settles.
-      await requestFromPlayer(pid, { type: 'command', cmd: 'update' });
+      await requestFromPerformer(pid, { type: 'command', cmd: 'update' });
     } catch (e) {
       r.ok = false;
       r.error = e.message;

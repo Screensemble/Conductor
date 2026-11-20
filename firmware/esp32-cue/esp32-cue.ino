@@ -1,6 +1,6 @@
-// Screensemble ESP32 trigger — fires /api/triggers/<id> on the server.
-// Each configured pin maps to a trigger id; the server owns everything
-// else (mapping, cooldown, retrigger policy) — see src/triggers.js.
+// Screensemble ESP32 cue device — fires /api/cues/<id> on the server.
+// Each configured pin maps to a cue id; the conductor owns everything
+// else (mapping, cooldown, recue policy) — see src/cues.js.
 //
 // Build: Arduino IDE / PlatformIO, board "ESP32 Dev Module".
 // Fill in config.h before flashing.
@@ -12,9 +12,9 @@
 // config.h must define:
 //   WIFI_SSID, WIFI_PASS          network
 //   SERVER_URL                    "http://192.168.x.x:8080"
-//   TRIGGER_TOKEN                 bearer token (server env TRIGGER_TOKEN
+//   CUE_TOKEN                 bearer token (server env CUE_TOKEN
 //                                 or any paired display's token)
-//   INPUTS[]                      {pin, "trigger-id"} pairs, INPUT_PULLUP
+//   INPUTS[]                      {pin, "cue-id"} pairs, INPUT_PULLUP
 //   DEBOUNCE_MS                   ignore edges faster than this
 //   STATUS_LED                    blink pin (GPIO2 on most devkits)
 //   HEARTBEAT_MS                  status blink interval
@@ -38,13 +38,13 @@ void connectWifi() {
 void fire(const char *id) {
   if (WiFi.status() != WL_CONNECTED) connectWifi();
   HTTPClient http;
-  String url = String(SERVER_URL) + "/api/triggers/" + id;
+  String url = String(SERVER_URL) + "/api/cues/" + id;
   http.begin(url);
-  http.addHeader("Authorization", "Bearer " TRIGGER_TOKEN);
+  http.addHeader("Authorization", "Bearer " CUE_TOKEN);
   int code = http.POST("");
   // 202 fired, 429 inside server cooldown — both mean "received"; the
-  // server's cooldown/retrigger policy decides what happens next.
-  Serial.printf("trigger %s -> %d\n", id, code);
+  // server's cooldown/recue policy decides what happens next.
+  Serial.printf("cue %s -> %d\n", id, code);
   for (int i = 0; i < 3; i++) {          // triple-blink confirms a send
     digitalWrite(STATUS_LED, HIGH); delay(60);
     digitalWrite(STATUS_LED, LOW); delay(60);

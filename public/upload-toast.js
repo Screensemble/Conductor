@@ -1,6 +1,6 @@
 // Upload queue toast — polls /api/uploads and shows aggregate progress
 // for every in-flight transfer across all displays. Include on any
-// server page: it injects its own styles + DOM and self-starts.
+// Control Room page: it injects its own styles + DOM and self-starts.
 (() => {
   const css = document.createElement('style');
   css.textContent = `
@@ -61,7 +61,7 @@
     try {
       const r = await fetch('/api/uploads');
       jobs = (await r.json()).jobs || [];
-    } catch { /* server hiccup — keep polling */ }
+    } catch { /* conductor hiccup — keep polling */ }
 
     const active = jobs.filter(
       (j) => j.state === 'queued' || j.state === 'sending',

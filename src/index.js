@@ -13,23 +13,23 @@ import {
   mustChange,
   seedDefaultUser,
   sessionOf,
-  triggerTokenOk,
+  cueTokenOk,
 } from './auth.js';
 import { config } from './config.js';
-import { triggerRouter } from './triggers.js';
+import { cueRouter } from './cues.js';
 import { pairingPublicRouter, pairingRouter } from './pairing.js';
 import {
   clockInfo,
   deadlineFor,
-  disconnectPlayer,
-  handlePlayerConnection,
-  livePlayerIds,
-  playerOnline,
+  disconnectPerformer,
+  handlePerformerConnection,
+  livePerformerIds,
+  performerOnline,
   probeClock,
-  requestFromPlayer,
-  sendToPlayer,
+  requestFromPerformer,
+  sendToPerformer,
   startHeartbeat,
-} from './players.js';
+} from './performers.js';
 import { registry } from './registry.js';
 import { stageRestore, streamBackup } from './backup.js';
 import { extractFrame } from './frames.js';
@@ -61,7 +61,7 @@ const app = express();
 app.disable('x-powered-by');
 
 const MAX_UPLOAD_BYTES = Number(process.env.MAX_UPLOAD_MB ?? 4096) * 1024 * 1024;
-const UPLOAD_PATH = /^\/api\/(library|players\/[^/]+\/upload|backup\/restore)$/;
+const UPLOAD_PATH = /^\/api\/(library|(?:players|performers)\/[^/]+\/upload|backup\/restore)$/;
 
 // Better Auth owns /api/auth/* — mounted before express.json() so it can
 // read request bodies itself.
@@ -114,20 +114,32 @@ app.get('/api/uploads/file/:fileId', async (req, res) => {
   serveStaged(req.params.fileId, res);
 });
 
-// Hardware triggers authenticate POSTs with a bearer player token /
-// TRIGGER_TOKEN — firing is all a device can do. Map management
-// (GET/PUT/DELETE) always needs a dashboard session.
-app.use('/api/triggers', async (req, res, next) => {
-  if (req.method === 'POST' && triggerTokenOk(req)) return next();
-  if (await sessionOf(req)) return next();
-  res.status(401).json({ error: 'trigger authentication required' });
+
+// Legacy route aliases — older firmware and integrations keep working.
+app.use((req, _res, next) => {
+  if (req.path.startsWith('/api/players')) {
+    req.url = req.url.replace('/api/players', '/api/performers');
+  } else if (req.path.startsWith('/api/triggers')) {
+    req.url = req.url.replace('/api/triggers', '/api/cues');
+  }
+  next();
 });
-app.use('/api/triggers', triggerRouter);
+
+// Cue devices authenticate POSTs with a bearer performer token /
+// CUE_TOKEN (legacy TRIGGER_TOKEN honored) — firing is all a device can
+// do. Map management (GET/PUT/DELETE) always needs a Control Room
+// session.
+app.use('/api/cues', async (req, res, next) => {
+  if (req.method === 'POST' && cueTokenOk(req)) return next();
+  if (await sessionOf(req)) return next();
+  res.status(401).json({ error: 'cue authentication required' });
+});
+app.use('/api/cues', cueRouter);
 
 // On-server addon repository — token-gated file pulls + a per-display
 // repository.screensemble installer so displays update with no internet.
 app.get(['/repo', '/repo/:file'], serveRepoFile);
-app.get('/api/players/:id/repo.zip', (req, res) => {
+app.get('/api/performers/:id/repo.zip', (req, res) => {
   const zip = repoZip(req.params.id);
   if (!zip) return res.status(404).json({ error: 'display offline or unknown' });
   res.type('application/zip');
@@ -303,39 +315,40 @@ app.post('/api/users/:id/password', requireAdmin, async (req, res) => {
 // Displays hold a persistent WebSocket to /ws/player — "online" is simply
 // whether that socket is live; status arrives pushed every few seconds.
 // Device tokens never leave the server through the dashboard API.
-const publicPlayer = ({ token, ...p }) => ({ ...p, online: playerOnline(p.id) });
+const publicPerformer = ({ token, ...p }) => ({ ...p, online: performerOnline(p.id) });
 
-app.get('/api/players', (_req, res) => {
-  res.json({ players: registry.list().map(publicPlayer) });
+app.get('/api/performers', (_req, res) => {
+  const list = registry.list().map(publicPerformer);
+  res.json({ performers: list, players: list });
 });
 
 // Single display detail — registry record + live status + online flag.
-app.get('/api/players/:id', (req, res) => {
-  const p = registry.players.get(req.params.id);
-  if (!p) return res.status(404).json({ error: 'unknown player' });
+app.get('/api/performers/:id', (req, res) => {
+  const p = registry.performers.get(req.params.id);
+  if (!p) return res.status(404).json({ error: 'unknown performer' });
   res.json(publicPlayer(p));
 });
 
-app.post('/api/players/:id/labels', (req, res) => {
-  const p = registry.players.get(req.params.id);
+app.post('/api/performers/:id/labels', (req, res) => {
+  const p = registry.performers.get(req.params.id);
   const labels = req.body?.labels;
-  if (!p) return res.status(404).json({ error: 'unknown player' });
+  if (!p) return res.status(404).json({ error: 'unknown performer' });
   if (!Array.isArray(labels)) {
     return res.status(400).json({ error: 'labels must be an array' });
   }
-  const player = registry.upsert(p.id, {
+  const performer = registry.upsert(p.id, {
     labels: labels.slice(0, 20).map((l) => String(l).slice(0, 40)),
   });
-  res.json({ player: publicPlayer(player) });
+  res.json({ performer: publicPerformer(performer) });
 });
 
-app.post('/api/players/:id/command', async (req, res) => {
-  const p = registry.players.get(req.params.id);
+app.post('/api/performers/:id/command', async (req, res) => {
+  const p = registry.performers.get(req.params.id);
   const cmd = req.body?.cmd;
-  if (!p) return res.status(404).json({ error: 'unknown player' });
+  if (!p) return res.status(404).json({ error: 'unknown performer' });
   if (!cmd) return res.status(400).json({ error: 'no command' });
   try {
-    const reply = await requestFromPlayer(req.params.id, {
+    const reply = await requestFromPerformer(req.params.id, {
       type: 'command',
       cmd,
       name: req.body?.name,
@@ -347,11 +360,11 @@ app.post('/api/players/:id/command', async (req, res) => {
 });
 
 // A display's current playlist, fetched live over its socket.
-app.get('/api/players/:id/media', async (req, res) => {
-  const p = registry.players.get(req.params.id);
-  if (!p) return res.status(404).json({ error: 'unknown player' });
+app.get('/api/performers/:id/media', async (req, res) => {
+  const p = registry.performers.get(req.params.id);
+  if (!p) return res.status(404).json({ error: 'unknown performer' });
   try {
-    const reply = await requestFromPlayer(req.params.id, {
+    const reply = await requestFromPerformer(req.params.id, {
       type: 'get_media',
     });
     res.json({ items: reply.items || [] });
@@ -363,11 +376,11 @@ app.get('/api/players/:id/media', async (req, res) => {
 // Playlist mutations — mirrors the display's local admin API, proxied
 // over the socket so the per-display server UI can edit anything the
 // local one can.
-app.post('/api/players/:id/media/:op', async (req, res) => {
-  const p = registry.players.get(req.params.id);
-  if (!p) return res.status(404).json({ error: 'unknown player' });
+app.post('/api/performers/:id/media/:op', async (req, res) => {
+  const p = registry.performers.get(req.params.id);
+  if (!p) return res.status(404).json({ error: 'unknown performer' });
   try {
-    const reply = await requestFromPlayer(req.params.id, {
+    const reply = await requestFromPerformer(req.params.id, {
       ...(req.body || {}),
       type: 'media_op',
       op: req.params.op,
@@ -379,11 +392,11 @@ app.post('/api/players/:id/media/:op', async (req, res) => {
 });
 
 // Editable display settings, proxied over the socket.
-app.get('/api/players/:id/settings', async (req, res) => {
-  const p = registry.players.get(req.params.id);
-  if (!p) return res.status(404).json({ error: 'unknown player' });
+app.get('/api/performers/:id/settings', async (req, res) => {
+  const p = registry.performers.get(req.params.id);
+  if (!p) return res.status(404).json({ error: 'unknown performer' });
   try {
-    const reply = await requestFromPlayer(req.params.id, {
+    const reply = await requestFromPerformer(req.params.id, {
       type: 'get_settings',
     });
     res.json(reply.settings || {});
@@ -392,11 +405,11 @@ app.get('/api/players/:id/settings', async (req, res) => {
   }
 });
 
-app.post('/api/players/:id/settings', async (req, res) => {
-  const p = registry.players.get(req.params.id);
-  if (!p) return res.status(404).json({ error: 'unknown player' });
+app.post('/api/performers/:id/settings', async (req, res) => {
+  const p = registry.performers.get(req.params.id);
+  if (!p) return res.status(404).json({ error: 'unknown performer' });
   try {
-    const reply = await requestFromPlayer(req.params.id, {
+    const reply = await requestFromPerformer(req.params.id, {
       type: 'set_setting',
       settings: req.body || {},
     });
@@ -408,11 +421,11 @@ app.post('/api/players/:id/settings', async (req, res) => {
 
 // Media file proxy — thumbnails/previews pulled back over the socket
 // (base64). Enough for images; videos intentionally refuse.
-app.get('/api/players/:id/file/:name', async (req, res) => {
-  const p = registry.players.get(req.params.id);
-  if (!p) return res.status(404).json({ error: 'unknown player' });
+app.get('/api/performers/:id/file/:name', async (req, res) => {
+  const p = registry.performers.get(req.params.id);
+  if (!p) return res.status(404).json({ error: 'unknown performer' });
   try {
-    const reply = await requestFromPlayer(
+    const reply = await requestFromPerformer(
       req.params.id,
       { type: 'get_file', name: req.params.name },
       15000,
@@ -455,9 +468,9 @@ async function receiveUpload(req, res) {
   }
 }
 
-app.post('/api/players/:id/upload', async (req, res) => {
-  const p = registry.players.get(req.params.id);
-  if (!p) return res.status(404).json({ error: 'unknown player' });
+app.post('/api/performers/:id/upload', async (req, res) => {
+  const p = registry.performers.get(req.params.id);
+  if (!p) return res.status(404).json({ error: 'unknown performer' });
   const got = await receiveUpload(req, res);
   if (!got) return;
   const job = pushLibraryItem(req.params.id, got.name, got.size);
@@ -519,9 +532,10 @@ app.post('/api/library/:name/frame', async (req, res) => {
 app.post('/api/library/:name/push', (req, res) => {
   const name = validName(req.params.name);
   if (!hasItem(name)) return res.status(404).json({ error: 'not found' });
-  const players = Array.isArray(req.body?.players) ? req.body.players : [];
+  const ids = Array.isArray(req.body?.performers ?? req.body?.players)
+    ? (req.body.performers ?? req.body.players) : [];
   const size = statSync(itemPath(name)).size;
-  const jobs = players.map((pid) => pushLibraryItem(String(pid), name, size));
+  const jobs = ids.map((pid) => pushLibraryItem(String(pid), name, size));
   res.json({ jobs });
 });
 
@@ -538,7 +552,7 @@ app.post('/api/playlists/:name', async (req, res) => {
     return res.status(400).json({ error: 'name required (max 100 chars)' });
   }
   const pl = putPlaylist(name, req.body || {});
-  const results = pl.players.length ? await syncPlaylist(name) : {};
+  const results = (pl.performers ?? pl.players).length ? await syncPlaylist(name) : {};
   res.json({ playlist: pl, sync: results });
 });
 
@@ -563,37 +577,42 @@ app.get('/api/uploads', (_req, res) => {
 // shown statically); go converts one release instant into every display's
 // own clock domain so they all start together regardless of socket jitter.
 //
-// POST /api/conductor/arm { players?: [id] }        stage + probe clocks
-// POST /api/conductor/go  { lead_ms?, policy?,      release the staged set
-//                           min_ready? }            policy: all|min|any
-// GET  /api/conductor                               session + readiness
+// POST /api/conductor/prepare { performers?: [id] }  stage + probe clocks
+// POST /api/conductor/perform { lead_ms?, policy?,   release the staged set
+//                               min_ready? }         policy: all|min|any
+// POST /api/conductor/cancel                         cancel a staged session
+// GET  /api/conductor                                session + readiness
+// Legacy verbs arm/go/disarm map onto the same handlers.
 const conductor = {
-  armed: false,
-  players: new Set(),   // ids staged by the last arm
-  armed_at: null,
+  prepared: false,
+  performers: new Set(),   // ids staged by the last prepare
+  prepared_at: null,
 };
 
-// Clocks drift — refresh samples while a session stays armed so a long hold
-// doesn't skew the release deadline. Probe traffic is trivial vs. skew.
+// Clocks drift — refresh samples while a session stays prepared so a long
+// hold doesn't skew the release deadline. Probe traffic is trivial vs. skew.
 setInterval(() => {
-  if (!conductor.armed) return;
-  for (const id of conductor.players) {
+  if (!conductor.prepared) return;
+  for (const id of conductor.performers) {
     probeClock(id).catch(() => {});
   }
 }, 30_000).unref();
 
 function conductorReadiness() {
-  const rows = [...conductor.players].map((id) => ({
-    player_id: id,
-    online: playerOnline(id),
-    armed: Boolean(registry.players.get(id)?.status?.armed),
+  const rows = [...conductor.performers].map((id) => ({
+    performer_id: id,
+    online: performerOnline(id),
+    prepared: Boolean(
+      registry.performers.get(id)?.status?.prepared ??
+      registry.performers.get(id)?.status?.armed   // legacy performers
+    ),
     clock: clockInfo(id),
   }));
   return {
-    armed: conductor.armed,
-    armed_at: conductor.armed_at,
-    players: rows,
-    ready: rows.filter((r) => r.online && r.armed).length,
+    prepared: conductor.prepared,
+    prepared_at: conductor.prepared_at,
+    performers: rows,
+    ready: rows.filter((r) => r.online && r.prepared).length,
     total: rows.length,
   };
 }
@@ -603,26 +622,31 @@ app.get('/api/conductor', (_req, res) => {
 });
 
 app.post('/api/conductor/:cmd', async (req, res) => {
-  const cmd = req.params.cmd;
-  const targets = Array.isArray(req.body?.players)
-    ? req.body.players.filter((id) => livePlayerIds().includes(id))
-    : livePlayerIds();
+  // Legacy verb aliases: arm->prepare, go->perform, disarm->cancel.
+  const cmd = { arm: 'prepare', go: 'perform', disarm: 'cancel' }[
+    req.params.cmd
+  ] ?? req.params.cmd;
+  const targets = Array.isArray(req.body?.performers ?? req.body?.players)
+    ? (req.body.performers ?? req.body.players).filter((id) =>
+        livePerformerIds().includes(id))
+    : livePerformerIds();
 
-  if (cmd === 'arm') {
-    conductor.players = new Set(targets);
-    conductor.armed = true;
-    conductor.armed_at = new Date().toISOString();
-    // Probe before arming so the clock sample exists by the time go fires.
+  if (cmd === 'prepare') {
+    conductor.performers = new Set(targets);
+    conductor.prepared = true;
+    conductor.prepared_at = new Date().toISOString();
+    // Probe before staging so the clock sample exists by the time
+    // perform fires.
     await Promise.allSettled(targets.map((id) => probeClock(id)));
     const sent = targets.filter((id) =>
-      sendToPlayer(id, { type: 'command', cmd: 'arm' })
+      sendToPerformer(id, { type: 'command', cmd: 'prepare' })
     );
-    return res.json({ ok: true, cmd, delivered: sent.length, players: sent });
+    return res.json({ ok: true, cmd, delivered: sent.length, performers: sent });
   }
 
-  if (cmd === 'go') {
-    if (!conductor.armed) {
-      return res.status(409).json({ error: 'nothing armed — POST /api/conductor/arm first' });
+  if (cmd === 'perform') {
+    if (!conductor.prepared) {
+      return res.status(409).json({ error: 'nothing prepared — POST /api/conductor/prepare first' });
     }
     const ready = conductorReadiness();
     const policy = req.body?.policy ?? 'all';
@@ -636,33 +660,34 @@ app.post('/api/conductor/:cmd', async (req, res) => {
     // policy 'any' (or satisfied all/min) — release whoever is staged.
     const leadMs = Math.min(Math.max(Number(req.body?.lead_ms) || 500, 0), 30_000);
     const results = {};
-    for (const id of conductor.players) {
-      const r = registry.players.get(id);
-      if (!playerOnline(id) || !r?.status?.armed) {
-        results[id] = { released: false, reason: 'not armed' };
+    for (const id of conductor.performers) {
+      const st = registry.performers.get(id)?.status;
+      const prepared = st?.prepared ?? st?.armed;
+      if (!performerOnline(id) || !prepared) {
+        results[id] = { released: false, reason: 'not prepared' };
         continue;
       }
       const at = deadlineFor(id, leadMs);
       results[id] = at === null
         ? { released: false, reason: 'no clock sample' }
-        : { released: sendToPlayer(id, { type: 'command', cmd: 'go', at_mono: at }), at_mono: at };
+        : { released: sendToPerformer(id, { type: 'command', cmd: 'perform', at_mono: at }), at_mono: at };
     }
-    conductor.armed = false;
-    conductor.players = new Set();
+    conductor.prepared = false;
+    conductor.performers = new Set();
     return res.json({ ok: true, cmd, lead_ms: leadMs, results });
   }
 
-  if (cmd === 'disarm') {
+  if (cmd === 'cancel') {
     // Cancel a staged session — displays resume their normal sequence.
-    const sent = [...conductor.players].filter((id) =>
-      sendToPlayer(id, { type: 'command', cmd: 'restart' })
+    const sent = [...conductor.performers].filter((id) =>
+      sendToPerformer(id, { type: 'command', cmd: 'restart' })
     );
-    conductor.armed = false;
-    conductor.players = new Set();
+    conductor.prepared = false;
+    conductor.performers = new Set();
     return res.json({ ok: true, cmd, delivered: sent.length });
   }
 
-  res.status(400).json({ error: 'arm|go|disarm only' });
+  res.status(400).json({ error: 'prepare|perform|cancel only' });
 });
 
 // Backup — GET streams a tar.gz of the whole data volume (registry,
@@ -694,15 +719,15 @@ app.post('/api/backup/restore', async (req, res) => {
   }
 });
 
-app.delete('/api/players/:id', (req, res) => {
+app.delete('/api/performers/:id', (req, res) => {
   if (!registry.remove(req.params.id)) {
-    return res.status(404).json({ error: 'unknown player' });
+    return res.status(404).json({ error: 'unknown performer' });
   }
-  disconnectPlayer(req.params.id);
+  disconnectPerformer(req.params.id);
   res.json({ ok: true });
 });
 
-// TLS is opt-in: set TLS_CERT + TLS_KEY and both HTTP and the player
+// TLS is opt-in: set TLS_CERT + TLS_KEY and both HTTP and the performer
 // socket become https/wss. Displays just dial wss://; set the display's
 // tls_insecure for self-signed LAN certs.
 const server = process.env.TLS_CERT && process.env.TLS_KEY
@@ -720,7 +745,7 @@ const wss = new WebSocketServer({
   path: '/ws/player',
   maxPayload: 16 * 1024 * 1024,
 });
-wss.on('connection', handlePlayerConnection);
+wss.on('connection', handlePerformerConnection);
 startHeartbeat(wss);
 
 for (const sig of ['SIGINT', 'SIGTERM']) {
@@ -734,6 +759,6 @@ await seedDefaultUser();
 
 server.listen(config.port, config.host, () => {
   console.log(
-    `screensemble-server listening on ${config.host}:${config.port} (role: ${config.serverRole})`,
+    `Screensemble Conductor listening on ${config.host}:${config.port} (role: ${config.serverRole})`,
   );
 });

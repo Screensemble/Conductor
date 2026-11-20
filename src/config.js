@@ -12,7 +12,7 @@ export const config = {
   // See spec section 1, "Operating modes".
   serverRole: process.env.SERVER_ROLE ?? 'manager',
   // Identity shown to displays during pairing (GET /api/info).
-  serverName: process.env.SERVER_NAME ?? 'Screensemble Server',
+  serverName: process.env.SERVER_NAME ?? 'Screensemble Conductor',
   serverOwner: process.env.SERVER_OWNER ?? '',
   serverInfo: process.env.SERVER_INFO ?? '',
   // Displays older than this are refused pairing (reported via /api/info).
