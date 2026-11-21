@@ -326,7 +326,7 @@ app.get('/api/performers', (_req, res) => {
 app.get('/api/performers/:id', (req, res) => {
   const p = registry.performers.get(req.params.id);
   if (!p) return res.status(404).json({ error: 'unknown performer' });
-  res.json(publicPlayer(p));
+  res.json(publicPerformer(p));
 });
 
 app.post('/api/performers/:id/labels', (req, res) => {
