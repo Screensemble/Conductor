@@ -79,6 +79,11 @@
   .empty { padding: 14px; color: var(--dim); font-size: 13px;
            background: var(--card); border: 1px solid var(--edge);
            border-radius: 8px; }
+  .bar { height: 8px; background: #0a1428; border-radius: 4px;
+         overflow: hidden; margin-top: 10px; }
+  .bar i { display: block; height: 100%; border-radius: 4px;
+           background: linear-gradient(90deg,#1e9be8,#3ec1f3);
+           transition: width .25s ease; }
   footer { border-top: 1px solid var(--edge); padding: 12px 20px;
            color: var(--dim); font-size: 12px; display: flex; gap: 18px;
            flex-wrap: wrap; }
@@ -155,10 +160,14 @@
     <div class="panel">
       <div class="row">
         <input type="file" id="fileInput" style="flex:1">
-        <button onclick="upload()">Upload</button>
+        <button id="upBtn" onclick="upload()">Upload</button>
+      </div>
+      <div id="upWrap" hidden>
+        <div class="bar"><i id="upFill" style="width:0%"></i></div>
+        <p class="muted" id="upText" style="margin-top:6px"></p>
       </div>
       <p class="muted">Files are sent to this display's media folder — the
-        transfer progress shows in the corner toast.</p>
+        pull progress shows in the corner toast after the send finishes.</p>
     </div>
     <h2>Add a URL</h2>
     <div class="panel">
@@ -570,21 +579,52 @@ async function saveSettings() {
   return false;
 }
 
-async function upload() {
+function fmtBytes(b) {
+  return b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB'
+                      : Math.max(1, Math.round(b / 1024)) + ' KB';
+}
+
+// XHR, not fetch — upload.onprogress is the only portable way to see the
+// browser→conductor stage, which dominates for large gallery files.
+function upload() {
   const f = $('fileInput').files[0];
   if (!f) return toast('Choose a file first');
-  const r = await fetch(API + '/upload?name=' + encodeURIComponent(f.name), {
-    method: 'POST',
-    headers: {'Content-Type': 'application/octet-stream'},
-    body: f,
-  });
-  const d = await r.json().catch(() => ({}));
-  if (d.job && d.job.state !== 'error') {
-    toast('Queued ' + f.name);  // progress tracks in the corner toast
-  } else {
-    toast(d.job ? 'Failed: ' + (d.job.error || '') : 'Upload failed');
-  }
-  $('fileInput').value = '';
+  const wrap = $('upWrap'), fill = $('upFill'), text = $('upText');
+  wrap.hidden = false;
+  fill.style.width = '0%';
+  text.textContent = 'Sending to conductor…';
+  $('upBtn').disabled = true;
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', API + '/upload?name=' + encodeURIComponent(f.name));
+  xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+  xhr.upload.onprogress = e => {
+    if (!e.lengthComputable) return;
+    const pct = Math.round(e.loaded / e.total * 100);
+    fill.style.width = pct + '%';
+    text.textContent =
+      `Sending to conductor… ${pct}% (${fmtBytes(e.loaded)} of ${fmtBytes(e.total)})`;
+  };
+  xhr.onload = () => {
+    $('upBtn').disabled = false;
+    let d = {};
+    try { d = JSON.parse(xhr.responseText || '{}'); } catch {}
+    if (d.job && d.job.state !== 'error') {
+      fill.style.width = '100%';
+      text.textContent =
+        'Sent — the display is pulling now (live progress in the corner toast)';
+      toast('Queued ' + f.name);
+      setTimeout(() => { wrap.hidden = true; }, 8000);
+    } else {
+      text.textContent =
+        'Failed: ' + (d.job ? (d.job.error || '') : (d.error || 'upload failed'));
+    }
+    $('fileInput').value = '';
+  };
+  xhr.onerror = () => {
+    $('upBtn').disabled = false;
+    text.textContent = 'Upload failed — check the connection.';
+  };
+  xhr.send(f);
 }
 
 async function toggleMaint() {
