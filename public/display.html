@@ -176,6 +176,7 @@
   <section id="page-settings" hidden>
     <h2>Settings</h2>
     <div class="panel">
+      <p class="muted" id="offlineNote" hidden>Display offline — changes will apply when it reconnects.</p>
       <form id="settingsForm" onsubmit="return saveSettings()">
         <label>Device name <input name="device_name"></label>
         <label>Media folder (empty = built-in) <input name="local_media_folder"></label>
@@ -542,6 +543,8 @@ async function loadSettings() {
   try {
     settings = await api('/settings');
   } catch { return; }
+  $('offlineNote').hidden = !settings._offline;
+  delete settings._offline;
   const f = $('settingsForm');
   for (const [k, v] of Object.entries(settings)) {
     if (f.elements[k]) f.elements[k].value = v;
@@ -550,16 +553,20 @@ async function loadSettings() {
 async function saveSettings() {
   const f = $('settingsForm');
   const out = {};
-  for (const k of Object.keys(settings)) {
-    const el = f.elements[k];
-    if (!el) continue;
-    out[k] = el.type === 'number' ? +el.value : el.value;
+  // Only send fields the response knew about or the user actually
+  // changed — an offline load leaves unknown fields blank and they
+  // must not clobber real values on the display.
+  for (const el of f.elements) {
+    if (!el.name) continue;
+    const k = el.name;
+    const v = el.type === 'number' ? +el.value : el.value;
+    if (k in settings || String(v) !== String(settings[k] ?? '')) out[k] = v;
   }
   // selects send strings — the display coerces by kind on its side
   const r = await api('/settings', {method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify(out)});
-  toast('Settings saved');
+  toast(r && r.pending ? 'Display offline — queued for reconnect' : 'Settings saved');
   return false;
 }
 

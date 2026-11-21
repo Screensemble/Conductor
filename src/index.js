@@ -414,6 +414,10 @@ app.post('/api/performers/:id/media/:op', async (req, res) => {
 app.get('/api/performers/:id/settings', async (req, res) => {
   const p = registry.performers.get(req.params.id);
   if (!p) return res.status(404).json({ error: 'unknown performer' });
+  if (!performerOnline(req.params.id)) {
+    // Offline — serve the queued values so the form shows what will sync.
+    return res.json({ ...(p.pending_settings || {}), _offline: true });
+  }
   try {
     const reply = await requestFromPerformer(req.params.id, {
       type: 'get_settings',
@@ -427,6 +431,17 @@ app.get('/api/performers/:id/settings', async (req, res) => {
 app.post('/api/performers/:id/settings', async (req, res) => {
   const p = registry.performers.get(req.params.id);
   if (!p) return res.status(404).json({ error: 'unknown performer' });
+  // Offline display — queue the change on the registry; it is pushed to
+  // the display the next time its link comes up (see performers.js).
+  if (!performerOnline(req.params.id)) {
+    registry.upsert(req.params.id, {
+      pending_settings: {
+        ...(p.pending_settings || {}),
+        ...(req.body || {}),
+      },
+    });
+    return res.json({ pending: true });
+  }
   try {
     const reply = await requestFromPerformer(req.params.id, {
       type: 'set_setting',

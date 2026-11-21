@@ -101,6 +101,21 @@ export function handlePerformerConnection(ws, req) {
         auth_hash: adminPasswordHash(),
       }));
       console.log(`performer online: ${performerId} (${msg.name || remote})`);
+      // Settings queued while the display was offline — push now that
+      // the link is up; cleared when the display acks settings_saved.
+      const pend = registry.performers.get(performerId)?.pending_settings;
+      if (pend && Object.keys(pend).length) {
+        requestFromPerformer(performerId, {
+          type: 'set_setting',
+          settings: pend,
+        })
+          .then(() =>
+            registry.upsert(performerId, { pending_settings: {} }),
+          )
+          .catch(() => {
+            /* stays queued — retried on the next connect */
+          });
+      }
       return;
     }
     if (!performerId) return; // must hello first
