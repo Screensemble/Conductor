@@ -56,6 +56,22 @@
     b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB'
                  : Math.max(1, Math.round(b / 1024)) + ' KB';
 
+  // id → display name, refreshed lazily so the header reads friendly.
+  let names = {}, namesAt = 0;
+  async function refreshNames() {
+    if (Date.now() - namesAt < 30_000) return;
+    namesAt = Date.now();
+    try {
+      const r = await fetch('/api/performers');
+      const d = await r.json();
+      names = Object.fromEntries(
+        (d.performers || []).map((p) => [p.id, p.name || p.id]),
+      );
+    } catch { /* keep last map */ }
+  }
+  refreshNames();
+  const nameOf = (id) => names[id] || id;
+
   async function poll() {
     let jobs = [];
     try {
@@ -75,7 +91,21 @@
 
     let body;
     if (active.length) {
-      const players = new Set(active.map((j) => j.player)).size;
+      // Per-display breakdown — each display reports its own download
+      // progress, so a slow/straggling one is visible instead of being
+      // averaged into an aggregate bar.
+      const byDisplay = new Map();
+      for (const j of active) {
+        const key = j.performer || '?';
+        if (!byDisplay.has(key)) {
+          byDisplay.set(key, { got: 0, tot: 0, names: [] });
+        }
+        const d = byDisplay.get(key);
+        d.got += j.received || 0;
+        d.tot += j.total || 0;
+        d.names.push(j.name);
+      }
+      const players = byDisplay.size;
       const got = active.reduce((s, j) => s + (j.received || 0), 0);
       const tot = active.reduce((s, j) => s + (j.total || 0), 0);
       const pct = tot ? Math.min(100, Math.round((got / tot) * 100)) : 0;
@@ -84,14 +114,20 @@
         : 'Uploading to display…';
       body =
         `<div class="head"><div class="icon">${ICON}</div>` +
-        `<div class="t">${title}</div><div class="pct">${pct}%</div></div>` +
-        `<div>${active.length} file${active.length > 1 ? 's' : ''} — ` +
-        `${fmt(got)} of ${fmt(tot)}</div>` +
-        `<div class="bar"><i style="width:${pct}%"></i></div>` +
-        `<div class="sub">${active.map((j) => esc(j.name)).join(' · ')}</div>` +
-        (errors.length
-          ? `<div class="err">${errors.length} transfer(s) failed</div>`
-          : '');
+        `<div class="t">${title}</div><div class="pct">${pct}%</div></div>`;
+      for (const [id, d] of byDisplay) {
+        const p = d.tot
+          ? Math.min(100, Math.round((d.got / d.tot) * 100))
+          : 0;
+        body +=
+          `<div class="sub"><b>${esc(nameOf(id))}</b> — ` +
+          `${d.names.map(esc).join(' · ')}</div>` +
+          `<div class="sub">${fmt(d.got)} of ${fmt(d.tot)} — ${p}%</div>` +
+          `<div class="bar"><i style="width:${p}%"></i></div>`;
+      }
+      body += errors.length
+        ? `<div class="err">${errors.length} transfer(s) failed</div>`
+        : '';
     } else {
       body =
         `<div class="head"><div class="icon" ` +
