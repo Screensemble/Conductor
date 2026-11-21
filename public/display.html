@@ -97,7 +97,8 @@
   <a class="backlink" href="/">← fleet</a>
   <a class="backlink" href="/library.html">library</a>
   <nav>
-    <button class="tab on" id="tab-playlist" onclick="showTab('playlist')">Playlist</button>
+    <button class="tab on" id="tab-remote" onclick="showTab('remote')">Remote</button>
+    <button class="tab" id="tab-playlist" onclick="showTab('playlist')">Playlist</button>
     <button class="tab" id="tab-add" onclick="showTab('add')">Add media</button>
     <button class="tab" id="tab-settings" onclick="showTab('settings')">Settings</button>
     <button class="tab" id="tab-system" onclick="showTab('system')">System</button>
@@ -110,8 +111,30 @@
 </header>
 <main>
 
+  <!-- ============ Remote (transport + maintenance) ============ -->
+  <section id="page-remote">
+    <div class="panel">
+      <h2>Now showing</h2>
+      <div id="rmState" class="muted">—</div>
+      <div id="rmCurrent" style="font-size:18px;margin:6px 0 14px">—</div>
+      <div class="row">
+        <button onclick="cmd('prev')" title="previous item">&#9198;</button>
+        <button id="rmPause" onclick="cmd('pause')" title="pause/resume">&#9208;</button>
+        <button onclick="cmd('next')" title="next item">&#9197;</button>
+        <button class="danger" onclick="cmd('stop')" title="stop to standby">&#9209;</button>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Kodi UI</h2>
+      <p class="muted" style="margin:0 0 10px">Exiting shows the Kodi home screen for
+        local management. The auto-resume timer on the display brings the
+        presentation back on its own.</p>
+      <button id="rmMaint" class="secondary" onclick="toggleMaint()">Exit to Kodi UI</button>
+    </div>
+  </section>
+
   <!-- ============ Playlist (active / inactive items) ============ -->
-  <section id="page-playlist">
+  <section id="page-playlist" hidden>
     <div class="row" style="margin-bottom:14px">
       <label style="margin:0"><input type="checkbox" id="shuffleBox"
         style="width:auto" onchange="setShuffle(this.checked)"> Shuffle play order</label>
@@ -239,7 +262,7 @@ async function api(path, opts) {
   return r.json();
 }
 function showTab(name) {
-  for (const t of ['playlist','add','settings','system']) {
+  for (const t of ['remote','playlist','add','settings','system']) {
     $('page-' + t).hidden = t !== name;
     $('tab-' + t).className = 'tab' + (t === name ? ' on' : '');
   }
@@ -266,6 +289,10 @@ async function refresh() {
     $('sysCurrent').textContent = s.current || '—';
     $('sysMedia').textContent = (s.items || 0) + ' item(s)';
     $('sysFree').textContent = s.free_gb != null ? s.free_gb + ' GB' : '—';
+    $('rmState').textContent = state + (s.paused ? ' (paused)' : '');
+    $('rmCurrent').textContent = s.current || (s.maintenance ? 'Kodi UI' : 'standby');
+    $('rmPause').style.opacity = s.playing ? 1 : 0.4;
+    $('rmMaint').textContent = s.maintenance ? 'Resume presentation' : 'Exit to Kodi UI';
     $('footInfo').textContent =
       (p.name || p.id) + ' · ' + (s.mode || '') + ' mode · ' +
       (s.free_gb != null ? s.free_gb + ' GB free' : '');
@@ -551,6 +578,10 @@ async function upload() {
     toast(d.job ? 'Failed: ' + (d.job.error || '') : 'Upload failed');
   }
   $('fileInput').value = '';
+}
+
+async function toggleMaint() {
+  cmd($('rmMaint').textContent.startsWith('Resume') ? 'resume' : 'exit_ui');
 }
 
 async function cmd(c, name) {

@@ -20,7 +20,8 @@ export const cueRouter = Router();
 //   {
 //     "gallery-door": {
 //       "action": "prepare" | "perform" | "sync" | "play_item" | "stop"
-//               | "resume" | "restart" | "reboot",
+//               | "pause" | "resume" | "next" | "prev" | "exit_ui"
+//               | "restart" | "reboot",
 //       "item": "promo.mp4",            // required for play_item
 //       "performers": ["hw-…"],         // default: all connected ("players" accepted)
 //       "cooldown_ms": 30000,           // ignore repeat fires inside this
@@ -91,7 +92,8 @@ cueRouter.delete('/:cue_id', (req, res) => {
 // can make displays do, orchestrated or not.
 export const ACTIONS = [
   'prepare', 'perform', 'sync',           // orchestrated release
-  'play_item', 'stop', 'resume',          // direct playback control
+  'play_item', 'stop', 'pause',           // direct playback control
+  'resume', 'next', 'prev', 'exit_ui',
   'restart', 'reboot',                    // playlist reload / box reboot
 ];
 
@@ -103,7 +105,8 @@ async function runCue(id, def) {
   if (!targets.length) return { delivered: 0, note: 'no performers online' };
 
   // Direct (non-orchestrated) commands — no clock work needed.
-  if (['stop', 'resume', 'restart', 'reboot', 'play_item'].includes(action)) {
+  if (['stop', 'resume', 'restart', 'reboot', 'play_item',
+       'pause', 'next', 'prev', 'exit_ui'].includes(action)) {
     const cmd = { type: 'command', cmd: action };
     if (action === 'play_item') {
       if (!def.item) return { delivered: 0, note: 'play_item needs an item name' };
