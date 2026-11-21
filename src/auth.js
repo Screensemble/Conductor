@@ -68,8 +68,8 @@ export const auth = betterAuth({
 
 // First boot seeds the default admin — password change is forced at
 // first login, so the shipped credential never survives into use.
-const DEFAULT_USER = process.env.AUTH_DEFAULT_USER ?? 'screensemble';
-const DEFAULT_PASS = process.env.AUTH_DEFAULT_PASSWORD ?? 'screensemble';
+const DEFAULT_USER = process.env.AUTH_DEFAULT_USER ?? 'admin';
+const DEFAULT_PASS = process.env.AUTH_DEFAULT_PASSWORD ?? 'admin';
 
 export async function seedDefaultUser() {
   // Better-auth tables are created by its migration runner, not at
@@ -163,4 +163,41 @@ export function cueTokenOk(req) {
   const shared = process.env.CUE_TOKEN || process.env.TRIGGER_TOKEN;
   if (shared && tokenEquals(tok, shared)) return true;
   return performerTokenOk(tok);
+}
+
+// The primary admin's scrypt verifier (better-auth format "salt:hash").
+// Pushed to paired performers so a disconnected display can gate its
+// degraded local admin with the same credential — the device stores the
+// verifier, never a raw password.
+export function adminPasswordHash() {
+  try {
+    return authDb
+      .prepare('SELECT password FROM account ORDER BY createdAt LIMIT 1')
+      .get()?.password ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// One password bar for the whole system — the Conductor change form,
+// admin-created accounts, and the Performer's local lock all enforce it.
+export const PASSWORD_RULE =
+  'at least 8 characters, one letter, one digit';
+export function passwordOk(pw) {
+  const p = String(pw ?? '');
+  return p.length >= 8 && /[a-zA-Z]/.test(p) && /\d/.test(p);
+}
+
+// Any account with a pending forced password change gates pairing — a
+// fresh conductor must be claimed before devices may enroll.
+export function passwordChangePending() {
+  try {
+    return (
+      authDb
+        .prepare('SELECT COUNT(*) AS n FROM users_meta WHERE must_change_password = 1')
+        .get().n > 0
+    );
+  } catch {
+    return false;
+  }
 }

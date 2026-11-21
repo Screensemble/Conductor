@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fireBattonEvent } from './automations.js';
+import { passwordChangePending } from './auth.js';
 
 export const battonsPublicRouter = Router();  // offer/poll — pre-credentials
 export const battonDeviceRouter = Router();   // heartbeat/event — bearer token
@@ -68,6 +69,11 @@ function battonTokenOk(req, id) {
 // -- Pairing (open; a batton holds no credentials yet) ---------------------
 
 battonsPublicRouter.post('/offer', (req, res) => {
+  if (passwordChangePending()) {
+    return res.status(428).json({
+      error: 'conductor setup incomplete — change the admin password first',
+    });
+  }
   const { name, hardware_id, inputs, version, client_url } = req.body ?? {};
   if (!hardware_id) return res.status(400).json({ error: 'hardware_id required' });
   // A re-offer from an already-paired device rebinds to its record —

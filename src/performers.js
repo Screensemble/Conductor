@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { tokenEquals } from './auth.js';
 import { hardwareKey } from './pairing.js';
 import { registry } from './registry.js';
+import { adminPasswordHash } from './auth.js';
 
 // Performer WebSocket endpoint (/ws/player). Displays dial OUT to the server
 // and hold one persistent socket — enrollment, status reports, commands
@@ -94,7 +95,11 @@ export function handlePerformerConnection(ws, req) {
         online: true,
         last_seen: new Date().toISOString(),
       });
-      ws.send(JSON.stringify({ type: 'hello_ack', player_id: performerId }));
+      ws.send(JSON.stringify({
+        type: 'hello_ack',
+        player_id: performerId,
+        auth_hash: adminPasswordHash(),
+      }));
       console.log(`performer online: ${performerId} (${msg.name || remote})`);
       return;
     }

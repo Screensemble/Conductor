@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { randomBytes, randomInt } from 'node:crypto';
 import { config } from './config.js';
 import { registry } from './registry.js';
+import { passwordChangePending } from './auth.js';
 
 // Pairing handshake (spec: enrollment). Only displays paired through this
 // flow can connect; there is no first-come enrollment.
@@ -73,6 +74,12 @@ export function hardwareKey(hardwareId) {
 
 pairingPublicRouter.post('/request', (req, res) => {
   sweep();
+  if (passwordChangePending()) {
+    return res.status(428).json({
+      accepted: false,
+      reason: 'conductor setup incomplete — change the admin password first',
+    });
+  }
   const { product, version, name, client_url, hardware_id, code } = req.body ?? {};
   if (product !== 'screensemble-client') {
     return res

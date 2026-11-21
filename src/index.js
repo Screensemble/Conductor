@@ -13,6 +13,8 @@ import {
   mustChange,
   seedDefaultUser,
   sessionOf,
+  passwordOk,
+  PASSWORD_RULE,
   cueTokenOk,
 } from './auth.js';
 import { config } from './config.js';
@@ -226,6 +228,9 @@ app.post('/api/me/set-password', async (req, res) => {
     return res
       .status(400)
       .json({ error: 'current and new password required' });
+  }
+  if (!passwordOk(new_password)) {
+    return res.status(400).json({ error: `password must have ${PASSWORD_RULE}` });
   }
   try {
     await auth.api.changePassword({
