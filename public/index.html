@@ -297,13 +297,23 @@ function editLabels(id, btn) {
   const p = players.find(x => x.id === id) || {};
   const tr = document.createElement("tr");
   tr.className = "editrow";
-  tr.innerHTML = `<td colspan="7">Labels (comma-separated):
+  tr.innerHTML = `<td colspan="7">Name:
+    <input id="ne_${esc(id)}" value="${esc(p.name || "")}">
+    Labels (comma-separated):
     <input id="le_${esc(id)}" value="${esc((p.labels || []).join(", "))}">
     <button onclick="saveLabels(${jsArg(id)})">Save</button></td>`;
   row.after(tr);
 }
 
 async function saveLabels(id) {
+  const name = $(`ne_${id}`).value.trim();
+  if (name) {
+    await api(`/api/performers/${encodeURIComponent(id)}/settings`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ device_name: name }),
+    });
+  }
   const labels = $(`le_${id}`).value.split(",")
     .map(s => s.trim()).filter(Boolean);
   await api(`/api/performers/${encodeURIComponent(id)}/labels`, {

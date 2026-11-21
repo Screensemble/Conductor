@@ -133,7 +133,11 @@ export function handlePerformerConnection(ws, req) {
       online: true,
       last_seen: new Date().toISOString(),
       ...(msg.type === 'status' && msg.status && typeof msg.status === 'object'
-        ? { status: msg.status }
+        ? {
+            status: msg.status,
+            // Renames propagate via status — no reconnect needed.
+            ...(msg.status.name ? { name: String(msg.status.name).slice(0, 100) } : {}),
+          }
         : {}),
     });
   });
