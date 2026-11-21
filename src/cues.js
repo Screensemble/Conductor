@@ -19,7 +19,9 @@ export const cueRouter = Router();
 //
 //   {
 //     "gallery-door": {
-//       "action": "prepare" | "perform" | "sync" | "restart",
+//       "action": "prepare" | "perform" | "sync" | "play_item" | "stop"
+//               | "resume" | "restart" | "reboot",
+//       "item": "promo.mp4",            // required for play_item
 //       "performers": ["hw-…"],         // default: all connected ("players" accepted)
 //       "cooldown_ms": 30000,           // ignore repeat fires inside this
 //       "retrigger": "ignore" | "restart" | "queue",  // re-fire policy
@@ -60,13 +62,14 @@ cueRouter.put('/:cue_id', (req, res) => {
   // Legacy config keys are normalized: arm->prepare, go->perform,
   // players->performers — stored form is always the new vocabulary.
   const action = { arm: 'prepare', go: 'perform' }[t.action] ?? t.action;
-  if (!['prepare', 'perform', 'sync', 'restart'].includes(action)) {
-    return res.status(400).json({ error: 'action must be prepare|perform|sync|restart' });
+  if (!ACTIONS.includes(action)) {
+    return res.status(400).json({ error: `action must be ${ACTIONS.join('|')}` });
   }
   map[req.params.cue_id] = {
     action,
     ...(Array.isArray(t.performers ?? t.players)
       ? { performers: t.performers ?? t.players } : {}),
+    ...(t.item ? { item: String(t.item).slice(0, 200) } : {}),
     cooldown_ms: Math.max(Number(t.cooldown_ms) || 0, 0),
     retrigger: ['ignore', 'restart', 'queue'].includes(t.retrigger)
       ? t.retrigger : 'ignore',
@@ -84,6 +87,14 @@ cueRouter.delete('/:cue_id', (req, res) => {
   res.json({ ok: true });
 });
 
+// Shared by /api/cues and the automations engine — everything a trigger
+// can make displays do, orchestrated or not.
+export const ACTIONS = [
+  'prepare', 'perform', 'sync',           // orchestrated release
+  'play_item', 'stop', 'resume',          // direct playback control
+  'restart', 'reboot',                    // playlist reload / box reboot
+];
+
 async function runCue(id, def) {
   const action = { arm: 'prepare', go: 'perform' }[def.action] ?? def.action;
   const targets = Array.isArray(def.performers ?? def.players)
@@ -91,8 +102,14 @@ async function runCue(id, def) {
     : livePerformerIds();
   if (!targets.length) return { delivered: 0, note: 'no performers online' };
 
-  if (action === 'restart') {
-    targets.forEach((p) => sendToPerformer(p, { type: 'command', cmd: 'restart' }));
+  // Direct (non-orchestrated) commands — no clock work needed.
+  if (['stop', 'resume', 'restart', 'reboot', 'play_item'].includes(action)) {
+    const cmd = { type: 'command', cmd: action };
+    if (action === 'play_item') {
+      if (!def.item) return { delivered: 0, note: 'play_item needs an item name' };
+      cmd.name = def.item;
+    }
+    targets.forEach((p) => sendToPerformer(p, cmd));
     return { delivered: targets.length };
   }
   if (action === 'prepare') {
@@ -124,11 +141,10 @@ async function runCue(id, def) {
   return { delivered: Object.values(results).filter((r) => r.released).length, results };
 }
 
-cueRouter.post('/:cue_id', (req, res) => {
-  const id = req.params.cue_id;
-  const def = map[id];
-  if (!def) return res.status(404).json({ error: 'unmapped cue' });
-
+// Shared fire path — cooldown + retrigger policy, then the action. Used
+// by the cue route and by every automation trigger source. Returns a
+// result object; callers translate it to HTTP status if they have one.
+export function fireCue(id, def) {
   const now = Date.now();
   const last = fired.get(id) ?? 0;
   if (def.cooldown_ms && now - last < def.cooldown_ms) {
@@ -141,16 +157,25 @@ cueRouter.post('/:cue_id', (req, res) => {
         fired.set(id, Date.now());
         await runCue(id, def);
       }, def.cooldown_ms - (now - last));
-      return res.status(202).json({ accepted: true, queued: true });
+      return { accepted: true, queued: true };
     }
-    return res.status(429).json({
+    return {
       accepted: false,
       reason: 'cooldown',
       retry_in_ms: def.cooldown_ms - (now - last),
-    });
+    };
   }
   fired.set(id, now);
-  runTrigger(id, def)
-    .then((r) => res.status(202).json({ accepted: true, ...r }))
+  return runCue(id, def).then((r) => ({ accepted: true, ...r }));
+}
+
+cueRouter.post('/:cue_id', (req, res) => {
+  const id = req.params.cue_id;
+  const def = map[id];
+  if (!def) return res.status(404).json({ error: 'unmapped cue' });
+  Promise.resolve(fireCue(id, def))
+    .then((r) =>
+      res.status(r.accepted ? 202 : 429).json(r),
+    )
     .catch((e) => res.status(500).json({ error: e.message }));
 });

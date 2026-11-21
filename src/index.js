@@ -17,6 +17,8 @@ import {
 } from './auth.js';
 import { config } from './config.js';
 import { cueRouter } from './cues.js';
+import { automationsRouter, hooksRouter } from './automations.js';
+import { battonDeviceRouter, battonsPublicRouter, battonsRouter } from './battons.js';
 import { pairingPublicRouter, pairingRouter } from './pairing.js';
 import {
   clockInfo,
@@ -98,6 +100,12 @@ app.get('/api/info', (_req, res) => {
 // Displays post here before they hold credentials — the only open mutation.
 app.use('/api/pair', pairingPublicRouter);
 
+// Battons offer themselves for pairing + poll for approval with a
+// one-time pair id; automations' webhooks are fired by external systems
+// with their unguessable key as the only credential.
+app.use('/api/battons', battonsPublicRouter);
+app.use('/api/hooks', hooksRouter);
+
 // Display file pulls carry the per-device pairing token in the URL; logged-in
 // users may also fetch (thumbnails). See fileAllowed().
 app.get('/api/library/file/:name', async (req, res) => {
@@ -135,6 +143,10 @@ app.use('/api/cues', async (req, res, next) => {
   res.status(401).json({ error: 'cue authentication required' });
 });
 app.use('/api/cues', cueRouter);
+
+// Batton device endpoints — each re-checks the per-batton bearer token.
+// Management routes mount later, behind the session guard.
+app.use('/api/battons', battonDeviceRouter);
 
 // On-server addon repository — token-gated file pulls + a per-display
 // repository.screensemble installer so displays update with no internet.
@@ -192,6 +204,8 @@ app.use(async (req, res, next) => {
 // Resolved from the module, not the cwd — data/ is cwd-relative, pages aren't.
 app.use(express.static(fileURLToPath(new URL('../public', import.meta.url))));
 app.use('/api/pair', pairingRouter); // invite/pending — session-gated
+app.use('/api/battons', battonsRouter);          // management — session-gated
+app.use('/api/automations', automationsRouter); // IFTTT editor — session-gated
 
 // -- Account ---------------------------------------------------------------
 app.get('/api/me', (req, res) => {
