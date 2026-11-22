@@ -200,9 +200,26 @@
             <option value="2">Stretch</option>
           </select>
         </label>
+        <label>Loop count <input name="loop_count" type="number" min="0" max="999" step="1"></label>
+        <p class="muted">0 = play forever. A counted run ends on its last pass
+          and re-arms on the idle screen.</p>
         <button type="submit">Save settings</button>
       </form>
       <p class="muted">Changes apply on the display immediately.</p>
+    </div>
+    <h2>Ensemble</h2>
+    <div class="panel">
+      <p class="muted">A held display idles on its standby surface until the
+        conductor performs — local signage stays off.</p>
+      <button id="ensBtn" class="secondary" onclick="toggleEnsemble()">Hold for conductor</button>
+      <h2 style="margin-top:16px">Idle image</h2>
+      <div class="row">
+        <select id="idlePick" style="flex:1"></select>
+        <button class="secondary" onclick="setIdle()">Set</button>
+        <button class="secondary" onclick="clearIdle()">Clear</button>
+      </div>
+      <p class="muted">Pulled from the conductor's library into the display —
+        shown while idle, armed, or ensemble-held.</p>
     </div>
   </section>
 
@@ -303,6 +320,10 @@ async function refresh() {
     $('rmCurrent').textContent = s.current || (s.maintenance ? 'Kodi UI' : 'standby');
     $('rmPause').style.opacity = s.playing ? 1 : 0.4;
     $('rmMaint').textContent = s.maintenance ? 'Resume presentation' : 'Exit to Kodi UI';
+    ensembleHeld = !!s.held;
+    $('ensBtn').textContent = ensembleHeld
+      ? 'Release to signage (held now)' : 'Hold for conductor';
+    $('ensBtn').className = ensembleHeld ? 'secondary danger' : 'secondary';
     $('footInfo').textContent =
       (p.name || p.id) + ' · ' + (s.mode || '') + ' mode · ' +
       (s.free_gb != null ? s.free_gb + ' GB free' : '');
@@ -639,7 +660,46 @@ async function cmd(c, name) {
   refresh();
 }
 
+let ensembleHeld = false;
+async function toggleEnsemble() {
+  const r = await api('/ensemble', {method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({held: !ensembleHeld})});
+  const mine = r && r[PID] !== undefined ? r[PID] : r;
+  toast(mine && mine.ok === false ? 'Failed: ' + (mine.error || '')
+                                  : ensembleHeld ? 'Released' : 'Held for conductor');
+  refresh();
+}
+
+const IMG_EXT = /\.(png|jpe?g|webp|gif|bmp)$/i;
+async function loadIdlePick() {
+  try {
+    const lib = await fetch('/api/library').then(r => r.json());
+    $('idlePick').innerHTML = (lib.items || [])
+      .filter(i => IMG_EXT.test(i.name || ''))
+      .map(i => `<option>${escH(i.name)}</option>`).join('')
+      || '<option value="">(library is empty)</option>';
+  } catch { $('idlePick').innerHTML = '<option value="">(library unavailable)</option>'; }
+}
+async function setIdle() {
+  const name = $('idlePick').value;
+  if (!name) return toast('Pick a library image first');
+  const r = await api('/idle', {method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name})});
+  const mine = r && r[PID] !== undefined ? r[PID] : r;
+  toast(mine && mine.ok === false ? 'Failed: ' + (mine.error || '') : 'Idle image set');
+  refresh();
+}
+async function clearIdle() {
+  const r = await api('/idle/clear', {method: 'POST',
+    headers: {'Content-Type': 'application/json'}, body: '{}'});
+  toast(r && r.ok ? 'Idle image cleared' : 'Failed: ' + ((r && r.error) || ''));
+  refresh();
+}
+
 loadSettings();
+loadIdlePick();
 refresh();
 setInterval(refresh, 5000);
 </script>

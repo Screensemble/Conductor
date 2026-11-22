@@ -28,6 +28,7 @@ import {
   disconnectPerformer,
   handlePerformerConnection,
   livePerformerIds,
+  performerBaseUrl,
   performerOnline,
   probeClock,
   requestFromPerformer,
@@ -47,6 +48,7 @@ import {
   deleteItem,
   hasItem,
   itemPath,
+  itemSha256,
   listItems,
   saveStream,
   serveItem,
@@ -58,6 +60,13 @@ import {
   putPlaylist,
   syncPlaylist,
 } from './playlists.js';
+import {
+  deleteCollection,
+  getCollection,
+  listCollections,
+  putCollection,
+  resolveTargets,
+} from './collections.js';
 import { statSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -604,6 +613,121 @@ app.post('/api/playlists/:name/sync', async (req, res) => {
 
 app.get('/api/uploads', (_req, res) => {
   res.json({ jobs: jobList() });
+});
+
+// -- Collections (groups & ensembles) --------------------------------------
+// A group is an administrative collection (targeting/organization, optional
+// content/settings replication when mirrored). An ensemble is the conducted
+// unit. `orchestrated` marks an ensemble; `mirrored` makes members act as
+// one — one configuration for a group, one synchronized display for an
+// ensemble. See design spec section 6.
+
+app.get('/api/collections', (_req, res) => {
+  res.json({ collections: listCollections() });
+});
+
+app.post(['/api/collections', '/api/collections/:id'], (req, res) => {
+  const body = { ...(req.body || {}) };
+  if (req.params.id) body.id = req.params.id;
+  res.json({ collection: putCollection(body) });
+});
+
+app.delete('/api/collections/:id', (req, res) => {
+  if (!deleteCollection(req.params.id)) {
+    return res.status(404).json({ error: 'unknown collection' });
+  }
+  res.json({ ok: true });
+});
+
+// -- Ensemble hold + idle image --------------------------------------------
+// `ensemble_hold` is an ordinary performer setting — it rides the
+// set_setting wire (and the offline queue) like every other setting.
+async function setEnsembleOn(ids, held) {
+  const results = {};
+  await Promise.all(
+    ids.map(async (pid) => {
+      try {
+        const reply = await requestFromPerformer(pid, {
+          type: 'set_setting',
+          settings: { ensemble_hold: Boolean(held) },
+        });
+        results[pid] = { ok: true, saved: reply.saved };
+      } catch (e) {
+        results[pid] = { ok: false, error: e.message };
+      }
+    }),
+  );
+  return results;
+}
+
+app.post('/api/performers/:id/ensemble', async (req, res) => {
+  res.json(await setEnsembleOn([req.params.id], req.body?.held));
+});
+
+// The idle image lives outside the playlist — the display pulls it into its
+// profile and shows it as the standby/armed surface (spec 6.x).
+async function pushIdleTo(ids, name) {
+  const results = {};
+  await Promise.all(
+    ids.map(async (pid) => {
+      const base = performerBaseUrl(pid);
+      const token = registry.performers.get(pid)?.token;
+      if (!base) {
+        results[pid] = { ok: false, error: 'display offline' };
+        return;
+      }
+      try {
+        const reply = await requestFromPerformer(pid, {
+          type: 'set_idle',
+          name,
+          url:
+            `${base}/api/library/file/${encodeURIComponent(name)}` +
+            (token ? `?token=${encodeURIComponent(token)}` : ''),
+          sha256: itemSha256(name),
+        }, 60_000);
+        results[pid] = { ok: reply.ok !== false, error: reply.error };
+      } catch (e) {
+        results[pid] = { ok: false, error: e.message };
+      }
+    }),
+  );
+  return results;
+}
+
+app.post('/api/performers/:id/idle', async (req, res) => {
+  const name = validName(req.body?.name);
+  if (!name || !hasItem(name)) {
+    return res.status(404).json({ error: 'unknown library item' });
+  }
+  res.json(await pushIdleTo([req.params.id], name));
+});
+
+app.post('/api/performers/:id/idle/clear', async (req, res) => {
+  try {
+    const reply = await requestFromPerformer(req.params.id, {
+      type: 'clear_idle',
+    });
+    res.json({ ok: reply.ok !== false });
+  } catch (e) {
+    res.json({ ok: false, error: e.message });
+  }
+});
+
+// Collection fan-out — members resolved through resolveTargets, deduped.
+app.post('/api/collections/:id/ensemble', async (req, res) => {
+  const col = getCollection(req.params.id);
+  if (!col) return res.status(404).json({ error: 'unknown collection' });
+  res.json(await setEnsembleOn(resolveTargets([col.id]), req.body?.held));
+});
+
+app.post('/api/collections/:id/idle', async (req, res) => {
+  const col = getCollection(req.params.id);
+  if (!col) return res.status(404).json({ error: 'unknown collection' });
+  const name = validName(req.body?.name);
+  if (!name || !hasItem(name)) {
+    return res.status(404).json({ error: 'unknown library item' });
+  }
+  res.json(await pushIdleTo(resolveTargets([col.id]), name));
 });
 
 // Conductor — synchronized multi-display arm/go. Arm probes each display's
