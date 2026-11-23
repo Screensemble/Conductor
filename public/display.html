@@ -203,6 +203,14 @@
         <label>Loop count <input name="loop_count" type="number" min="0" max="999" step="1"></label>
         <p class="muted">0 = play forever. A counted run ends on its last pass
           and re-arms on the idle screen.</p>
+        <label><input name="schedule_on" type="checkbox"> Restrict display hours</label>
+        <div class="row">
+          <label style="flex:1">Days <input name="schedule_days" placeholder="0,1,2,3,4"></label>
+          <label>From <input name="schedule_from" type="time"></label>
+          <label>Until <input name="schedule_to" type="time"></label>
+        </div>
+        <p class="muted">0 = Monday. 'Until' earlier than 'from' spans
+          midnight. Off-hours shows the image below — or a black screen.</p>
         <button type="submit">Save settings</button>
       </form>
       <p class="muted">Changes apply on the display immediately.</p>
@@ -215,11 +223,19 @@
       <h2 style="margin-top:16px">Idle image</h2>
       <div class="row">
         <select id="idlePick" style="flex:1"></select>
-        <button class="secondary" onclick="setIdle()">Set</button>
-        <button class="secondary" onclick="clearIdle()">Clear</button>
+        <button class="secondary" onclick="setIdle('idle')">Set</button>
+        <button class="secondary" onclick="clearIdle('idle')">Clear</button>
       </div>
       <p class="muted">Pulled from the conductor's library into the display —
         shown while idle, armed, or ensemble-held.</p>
+      <h2 style="margin-top:16px">Off-hours image</h2>
+      <div class="row">
+        <select id="offPick" style="flex:1"></select>
+        <button class="secondary" onclick="setIdle('off')">Set</button>
+        <button class="secondary" onclick="clearIdle('off')">Clear</button>
+      </div>
+      <p class="muted">Shown instead of a black screen while display hours
+        are closed.</p>
     </div>
   </section>
 
@@ -577,7 +593,10 @@ async function loadSettings() {
   delete settings._offline;
   const f = $('settingsForm');
   for (const [k, v] of Object.entries(settings)) {
-    if (f.elements[k]) f.elements[k].value = v;
+    const el = f.elements[k];
+    if (!el) continue;
+    if (el.type === 'checkbox') el.checked = v === true || v === 'true';
+    else el.value = v;
   }
 }
 async function saveSettings() {
@@ -589,7 +608,8 @@ async function saveSettings() {
   for (const el of f.elements) {
     if (!el.name) continue;
     const k = el.name;
-    const v = el.type === 'number' ? +el.value : el.value;
+    const v = el.type === 'checkbox' ? el.checked
+          : el.type === 'number' ? +el.value : el.value;
     if (k in settings || String(v) !== String(settings[k] ?? '')) out[k] = v;
   }
   // selects send strings — the display coerces by kind on its side
@@ -675,26 +695,35 @@ const IMG_EXT = /\.(png|jpe?g|webp|gif|bmp)$/i;
 async function loadIdlePick() {
   try {
     const lib = await fetch('/api/library').then(r => r.json());
-    $('idlePick').innerHTML = (lib.items || [])
+    const opts = (lib.items || [])
       .filter(i => IMG_EXT.test(i.name || ''))
       .map(i => `<option>${escH(i.name)}</option>`).join('')
       || '<option value="">(library is empty)</option>';
-  } catch { $('idlePick').innerHTML = '<option value="">(library unavailable)</option>'; }
+    $('idlePick').innerHTML = opts;
+    $('offPick').innerHTML = opts;
+  } catch {
+    $('idlePick').innerHTML = '<option value="">(library unavailable)</option>';
+    $('offPick').innerHTML = '<option value="">(library unavailable)</option>';
+  }
 }
-async function setIdle() {
-  const name = $('idlePick').value;
+async function setIdle(slot) {
+  const pick = slot === 'off' ? 'offPick' : 'idlePick';
+  const name = $(pick).value;
   if (!name) return toast('Pick a library image first');
   const r = await api('/idle', {method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({name})});
+    body: JSON.stringify({name, slot})});
   const mine = r && r[PID] !== undefined ? r[PID] : r;
-  toast(mine && mine.ok === false ? 'Failed: ' + (mine.error || '') : 'Idle image set');
+  toast(mine && mine.ok === false ? 'Failed: ' + (mine.error || '')
+                                  : (slot === 'off' ? 'Off-hours' : 'Idle') + ' image set');
   refresh();
 }
-async function clearIdle() {
+async function clearIdle(slot) {
   const r = await api('/idle/clear', {method: 'POST',
-    headers: {'Content-Type': 'application/json'}, body: '{}'});
-  toast(r && r.ok ? 'Idle image cleared' : 'Failed: ' + ((r && r.error) || ''));
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({slot})});
+  toast(r && r.ok ? (slot === 'off' ? 'Off-hours' : 'Idle') + ' image cleared'
+                  : 'Failed: ' + ((r && r.error) || ''));
   refresh();
 }
 

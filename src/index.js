@@ -666,7 +666,7 @@ app.post('/api/performers/:id/ensemble', async (req, res) => {
 
 // The idle image lives outside the playlist — the display pulls it into its
 // profile and shows it as the standby/armed surface (spec 6.x).
-async function pushIdleTo(ids, name) {
+async function pushIdleTo(ids, name, slot) {
   const results = {};
   await Promise.all(
     ids.map(async (pid) => {
@@ -680,6 +680,7 @@ async function pushIdleTo(ids, name) {
         const reply = await requestFromPerformer(pid, {
           type: 'set_idle',
           name,
+          slot: slot === 'off' ? 'off' : 'idle',
           url:
             `${base}/api/library/file/${encodeURIComponent(name)}` +
             (token ? `?token=${encodeURIComponent(token)}` : ''),
@@ -699,13 +700,14 @@ app.post('/api/performers/:id/idle', async (req, res) => {
   if (!name || !hasItem(name)) {
     return res.status(404).json({ error: 'unknown library item' });
   }
-  res.json(await pushIdleTo([req.params.id], name));
+  res.json(await pushIdleTo([req.params.id], name, req.body?.slot));
 });
 
 app.post('/api/performers/:id/idle/clear', async (req, res) => {
   try {
     const reply = await requestFromPerformer(req.params.id, {
       type: 'clear_idle',
+      slot: req.body?.slot === 'off' ? 'off' : 'idle',
     });
     res.json({ ok: reply.ok !== false });
   } catch (e) {
@@ -727,7 +729,7 @@ app.post('/api/collections/:id/idle', async (req, res) => {
   if (!name || !hasItem(name)) {
     return res.status(404).json({ error: 'unknown library item' });
   }
-  res.json(await pushIdleTo(resolveTargets([col.id]), name));
+  res.json(await pushIdleTo(resolveTargets([col.id]), name, req.body?.slot));
 });
 
 // Conductor — synchronized multi-display arm/go. Arm probes each display's
