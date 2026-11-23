@@ -787,7 +787,7 @@ app.post('/api/conductor/:cmd', async (req, res) => {
     req.params.cmd
   ] ?? req.params.cmd;
   const targets = Array.isArray(req.body?.performers ?? req.body?.players)
-    ? (req.body.performers ?? req.body.players).filter((id) =>
+    ? resolveTargets(req.body.performers ?? req.body.players).filter((id) =>
         livePerformerIds().includes(id))
     : livePerformerIds();
 

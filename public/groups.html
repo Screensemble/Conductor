@@ -1,0 +1,287 @@
+<!doctype html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Screensemble — Groups &amp; ensembles</title>
+<link rel="icon" type="image/png" href="/favicon.png">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 "Segoe UI", system-ui, sans-serif;
+         background: var(--navy); color: var(--text); }
+  :root {
+    --navy: #0a1428; --card: #10203c; --edge: #1d3a63;
+    --cyan: #4ecbe8; --text: #dce9f5; --dim: #7e95b3; --red: #e86a6a;
+  }
+  header { display: flex; align-items: center; gap: 14px;
+           padding: 10px 18px; background: var(--card);
+           border-bottom: 1px solid var(--edge); }
+  .mark { height: 34px; }
+  .wordmark { height: 18px; }
+  nav { display: flex; gap: 4px; margin-left: 12px; }
+  nav .tab { background: none; border: 0; border-radius: 6px 6px 0 0;
+             color: var(--dim); font-size: 14px; font-weight: 600;
+             padding: 10px 14px; cursor: pointer; text-decoration: none; }
+  nav .tab:hover { color: var(--text); }
+  nav .tab.on { color: var(--cyan); border-bottom: 2px solid var(--cyan); }
+  .backlink { color: var(--dim); text-decoration: none; font-weight: 600; }
+  .backlink:hover { color: var(--cyan); }
+  main { padding: 18px; max-width: 1100px; }
+  h2 { margin: 22px 0 10px; font-size: 15px; color: var(--cyan);
+       letter-spacing: .4px; }
+  h2:first-child { margin-top: 0; }
+  .card { background: var(--card); border: 1px solid var(--edge);
+          border-radius: 8px; padding: 14px 16px; margin-bottom: 12px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 11px; text-transform: uppercase;
+       letter-spacing: .6px; color: var(--dim); padding: 4px 8px;
+       border-bottom: 1px solid var(--edge); }
+  td { padding: 8px; border-bottom: 1px solid var(--edge); vertical-align: top; }
+  .dim { color: var(--dim); }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+         background: #34507a; margin-right: 6px; }
+  .dot.on { background: #5bd68a; }
+  .chip { display: inline-block; background: var(--edge); border-radius: 10px;
+          padding: 1px 8px; margin: 1px 3px 1px 0; font-size: 12px; }
+  .chip.held { outline: 1px solid var(--cyan); color: var(--cyan); }
+  button { background: var(--edge); border: 0; color: var(--text);
+           border-radius: 6px; padding: 6px 12px; cursor: pointer;
+           font-size: 13px; }
+  button:hover { background: #27507f; }
+  button.primary { background: var(--cyan); color: var(--navy); font-weight: 700; }
+  button.danger { background: none; color: var(--red); }
+  input, select { background: #060e1e; border: 1px solid var(--edge);
+                  color: var(--text); border-radius: 6px; padding: 6px 8px;
+                  font-size: 13px; }
+  label { display: block; margin: 8px 0 2px; font-size: 12px;
+          color: var(--dim); }
+  label.check { display: flex; gap: 8px; align-items: center; margin: 6px 0;
+                color: var(--text); font-size: 13px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
+  .row > div { min-width: 140px; }
+  .actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  .actions button { font-size: 12px; padding: 4px 10px; }
+  .mono { font-family: Consolas, monospace; font-size: 12px; }
+  #toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+           background: var(--cyan); color: var(--navy); font-weight: 700;
+           border-radius: 8px; padding: 9px 18px; opacity: 0;
+           transition: opacity .25s; pointer-events: none; }
+</style></head><body>
+<header>
+  <img class="mark" src="/logo.png" alt="">
+  <img class="wordmark" src="/wordmark.png" alt="Screensemble">
+  <a class="backlink" href="/">← fleet</a>
+  <nav>
+    <a class="tab on" href="/groups.html">Groups &amp; ensembles</a>
+    <a class="tab" href="/library.html">Library</a>
+    <a class="tab" href="/battons.html">Battons &amp; automations</a>
+  </nav>
+  <span id="authchip" class="authchip"></span>
+</header>
+<main>
+  <h2>Collections</h2>
+  <div class="dim" style="margin-bottom:10px">
+    A <b>group</b> is an administrative collection — target it for content and
+    commands. An <b>ensemble</b> (orchestrated) prepares and releases as one
+    instrument. <b>Mirrored</b> members show the same content; a mirrored
+    ensemble acts as a single display.
+  </div>
+  <div id="rows"></div>
+
+  <div class="card" id="editor">
+    <b id="edTitle">New collection</b>
+    <input type="hidden" id="edId">
+    <div class="row">
+      <div><label>Name</label><input id="edName" placeholder="Gallery wall"></div>
+      <div>
+        <label class="check"><input type="checkbox" id="edOrch">
+          Orchestrated — ensemble (prepare/perform as one)</label>
+        <label class="check"><input type="checkbox" id="edMirror">
+          Mirrored — same content on every member</label>
+      </div>
+    </div>
+    <label>Members</label>
+    <select id="edMembers" multiple size="5" style="width:100%;max-width:420px"></select>
+    <div class="dim" style="font-size:11px;margin-top:2px">ctrl-click to select several</div>
+    <div style="margin-top:10px">
+      <button class="primary" onclick="saveCollection()">Save collection</button>
+      <button onclick="resetEditor()">Clear</button>
+    </div>
+  </div>
+</main>
+<div id="toast"></div>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g,
+  (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+async function api(path, opts) {
+  const r = await fetch("/api" + path, opts);
+  if (r.status === 401 || r.redirected) return location.href = "/";
+  return r.json().catch(() => null);
+}
+function toast(msg) {
+  const t = $("toast");
+  t.textContent = msg; t.style.opacity = 1;
+  setTimeout(() => t.style.opacity = 0, 2200);
+}
+
+let collections = [], performers = [], library = [];
+
+async function refresh() {
+  const [c, p, l] = await Promise.all([
+    api("/collections"), api("/performers"), api("/library"),
+  ]);
+  collections = c?.collections || [];
+  performers = p?.performers || p?.players || [];
+  library = (l?.items || []).map(i => i.name ?? i).sort();
+  render();
+  fillMembers();
+}
+
+function perf(id) { return performers.find(p => p.id === id); }
+function typeLabel(c) {
+  const base = c.orchestrated ? "Ensemble" : "Group";
+  return c.mirrored ? `${base} · mirrored` : base;
+}
+function memberChips(c) {
+  if (!c.members?.length) return '<span class="dim">none</span>';
+  return c.members.map(id => {
+    const p = perf(id);
+    const on = p?.online;
+    const held = p?.status?.held;
+    return `<span class="chip${held ? " held" : ""}"` +
+      ` title="${esc(id)}${held ? " — held" : ""}">` +
+      `<span class="dot${on ? " on" : ""}"></span>` +
+      `${esc(p?.name || id)}</span>`;
+  }).join("");
+}
+
+function render() {
+  $("rows").innerHTML = collections.map(c => `
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:start">
+        <div>
+          <b>${esc(c.name || c.id)}</b>
+          <span class="dim mono" style="margin-left:8px">${esc(typeLabel(c))}</span>
+        </div>
+        <div>
+          <button onclick="editCollection('${esc(c.id)}')">Edit</button>
+          <button class="danger" onclick="delCollection('${esc(c.id)}')">Delete</button>
+        </div>
+      </div>
+      <div style="margin:8px 0">${memberChips(c)}</div>
+      <div class="actions">
+        <button onclick="hold('${esc(c.id)}', true)">Hold</button>
+        <button onclick="hold('${esc(c.id)}', false)">Release hold</button>
+        ${c.orchestrated ? `
+          <button onclick="conductor('${esc(c.id)}','prepare')">Prepare</button>
+          <button class="primary" onclick="conductor('${esc(c.id)}','perform')">Perform</button>
+          <button onclick="conductor('${esc(c.id)}','cancel')">Cancel</button>` : ""}
+        <button onclick="memberCmd('${esc(c.id)}','next')">Next</button>
+        <button onclick="memberCmd('${esc(c.id)}','stop')">Stop</button>
+        <select id="idle-${esc(c.id)}">
+          ${library.map(n => `<option>${esc(n)}</option>`).join("")}
+        </select>
+        <button onclick="idle('${esc(c.id)}', false)">Push idle</button>
+        <button onclick="idle('${esc(c.id)}', true)">Clear idle</button>
+      </div>
+    </div>`).join("")
+    || '<div class="card dim">No collections yet — build one below.</div>';
+}
+
+// -- Editor -----------------------------------------------------------------
+
+function fillMembers() {
+  $("edMembers").innerHTML = performers.map(p =>
+    `<option value="${esc(p.id)}">${p.online ? "●" : "○"} ` +
+    `${esc(p.name || p.id)}</option>`).join("");
+}
+function resetEditor() {
+  $("edId").value = ""; $("edName").value = "";
+  $("edOrch").checked = false; $("edMirror").checked = false;
+  [...$("edMembers").options].forEach(o => o.selected = false);
+  $("edTitle").textContent = "New collection";
+}
+function editCollection(id) {
+  const c = collections.find(x => x.id === id);
+  if (!c) return;
+  $("edId").value = c.id; $("edName").value = c.name || "";
+  $("edOrch").checked = !!c.orchestrated;
+  $("edMirror").checked = !!c.mirrored;
+  [...$("edMembers").options].forEach(o =>
+    o.selected = (c.members || []).includes(o.value));
+  $("edTitle").textContent = `Edit ${c.name || c.id}`;
+  window.scrollTo(0, document.body.scrollHeight);
+}
+async function saveCollection() {
+  const id = $("edId").value;
+  const body = {
+    name: $("edName").value.trim(),
+    orchestrated: $("edOrch").checked,
+    mirrored: $("edMirror").checked,
+    members: [...$("edMembers").selectedOptions].map(o => o.value),
+  };
+  if (!body.name) return toast("name the collection first");
+  const r = await api("/collections" + (id ? "/" + id : ""),
+    { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body) });
+  if (!r?.collection) return toast("save failed");
+  toast(`saved ${r.collection.name}`);
+  resetEditor(); refresh();
+}
+async function delCollection(id) {
+  const c = collections.find(x => x.id === id);
+  if (!confirm(`Delete ${c?.name || id}? Displays keep their content.`)) return;
+  await api("/collections/" + id, { method: "DELETE" });
+  refresh();
+}
+
+// -- Collection actions -------------------------------------------------------
+
+async function hold(id, held) {
+  const r = await api(`/collections/${id}/ensemble`,
+    { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ held }) });
+  const ok = Object.values(r || {}).filter(x => x.ok).length;
+  toast(`${held ? "held" : "released"} ${ok} display${ok === 1 ? "" : "s"}`);
+  refresh();
+}
+async function conductor(id, cmd) {
+  const r = await api(`/conductor/${cmd}`,
+    { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ performers: [id], policy: "any" }) });
+  if (r?.error) return toast(r.error);
+  toast(r?.delivered != null ? `${cmd} → ${r.delivered} display(s)` : cmd);
+}
+async function memberCmd(id, cmd) {
+  const c = collections.find(x => x.id === id);
+  if (!c?.members?.length) return toast("no members");
+  let ok = 0;
+  for (const pid of c.members) {
+    const r = await api(`/performers/${pid}/command`,
+      { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cmd }) });
+    if (r?.ok) ok++;
+  }
+  toast(`${cmd} → ${ok}/${c.members.length}`);
+}
+async function idle(id, clear) {
+  const c = collections.find(x => x.id === id);
+  if (!c?.members?.length) return toast("no members");
+  if (clear) {
+    for (const pid of c.members) {
+      await api(`/performers/${pid}/idle/clear`, { method: "POST" });
+    }
+    return toast("idle cleared");
+  }
+  const name = $("idle-" + id).value;
+  const r = await api(`/collections/${id}/idle`,
+    { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }) });
+  const ok = Object.values(r || {}).filter(x => x.ok).length;
+  toast(`idle ${name} → ${ok} display${ok === 1 ? "" : "s"}`);
+}
+
+refresh();
+setInterval(refresh, 15_000);
+</script>
+</body></html>
