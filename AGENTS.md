@@ -2,7 +2,7 @@
 
 ## What this is
 
-Self-hosted conductor for the Screensemble synchronized multi-display signage system. Acts as **Manager** (Managed mode) or **Controller** (Controlled/performance mode) depending on deployment. Coordinates Kodi-based performer addons, ESP32 cue devices, standby profiles, schedules, productions, and the Prepare/Perform synchronization sequence.
+Self-hosted conductor for the Screensemble synchronized multi-display signage system. Acts as **Manager** (Managed mode) or **Orchestrator** (Orchestrated/performance mode) depending on deployment. Coordinates Kodi-based performer addons, ESP32 cue devices, standby profiles, schedules, productions, and the Prepare/Perform synchronization sequence.
 
 ## Tech
 
@@ -39,5 +39,5 @@ docker run -p 8080:8080 screensemble-conductor
 
 - Keep the three logical responsibilities distinct (management, playback control, synchronization) even though this is one application — spec section 2.
 - Cue validation (auth, debounce, cooldown, retrigger policy) is always conductor-side; cue devices carry no show logic.
-- Controlled-mode commands carry conductor timestamps; the conductor is the time authority.
+- Orchestrated-mode commands carry conductor timestamps; the conductor is the time authority.
 - Per-device tokens for performer/cue auth; TLS supported for non-isolated deployments.
