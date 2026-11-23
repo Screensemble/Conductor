@@ -9,6 +9,8 @@ import {
   sendToPerformer,
 } from './performers.js';
 import { registry } from './registry.js';
+import { resolveTargets } from './collections.js';
+import { syncPlaylist } from './playlists.js';
 
 export const cueRouter = Router();
 
@@ -95,13 +97,32 @@ export const ACTIONS = [
   'play_item', 'stop', 'pause',           // direct playback control
   'resume', 'next', 'prev', 'exit_ui',
   'restart', 'reboot',                    // playlist reload / box reboot
+  'playlist',                             // apply a named playlist
 ];
 
 async function runCue(id, def) {
   const action = { arm: 'prepare', go: 'perform' }[def.action] ?? def.action;
+  // Target ids may name collections as well as displays — resolveTargets
+  // expands members and dedupes a display reachable through two paths.
   const targets = Array.isArray(def.performers ?? def.players)
-    ? (def.performers ?? def.players).filter((p) => livePerformerIds().includes(p))
+    ? resolveTargets(def.performers ?? def.players)
+      .filter((p) => livePerformerIds().includes(p))
     : livePerformerIds();
+
+  // Playlist apply — push + reorder via syncPlaylist. An explicit target
+  // list overrides the playlist's own members; empty falls back to them.
+  if (action === 'playlist') {
+    if (!def.item) return { delivered: 0, note: 'playlist needs a playlist name' };
+    const explicit = Array.isArray(def.performers ?? def.players)
+      && (def.performers ?? def.players).length
+      ? resolveTargets(def.performers ?? def.players)
+      : null;
+    const r = await syncPlaylist(def.item, { targets: explicit });
+    return {
+      delivered: r.error ? 0 : Object.keys(r).length,
+      ...(r.error ? { error: r.error } : { results: r }),
+    };
+  }
   if (!targets.length) return { delivered: 0, note: 'no performers online' };
 
   // Direct (non-orchestrated) commands — no clock work needed.

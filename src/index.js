@@ -19,7 +19,7 @@ import {
 } from './auth.js';
 import { config } from './config.js';
 import { cueRouter } from './cues.js';
-import { automationsRouter, hooksRouter } from './automations.js';
+import { automationsRouter, hooksRouter, startScheduler } from './automations.js';
 import { battonDeviceRouter, battonsPublicRouter, battonsRouter } from './battons.js';
 import { pairingPublicRouter, pairingRouter } from './pairing.js';
 import {
@@ -907,6 +907,7 @@ const wss = new WebSocketServer({
 });
 wss.on('connection', handlePerformerConnection);
 startHeartbeat(wss);
+startScheduler();
 
 for (const sig of ['SIGINT', 'SIGTERM']) {
   process.on(sig, () => {

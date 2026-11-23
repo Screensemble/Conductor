@@ -55,6 +55,12 @@
           color: var(--dim); }
   .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
   .row > div { min-width: 140px; }
+  .dayrow { display: flex; gap: 4px; margin-top: 4px; }
+  .dayrow button { width: 30px; height: 30px; padding: 0; border-radius: 6px;
+                   border: 1px solid var(--edge); background: #060e1e;
+                   color: var(--dim); cursor: pointer; font-size: 12px; }
+  .dayrow button.on { background: var(--cyan); color: var(--navy);
+                      font-weight: 700; border-color: var(--cyan); }
   .mono { font-family: Consolas, monospace; font-size: 12px; }
   #toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
            background: var(--cyan); color: var(--navy); font-weight: 700;
@@ -99,9 +105,19 @@
         <select id="edWhenType" onchange="whenTypeChanged()">
           <option value="batton">Batton input</option>
           <option value="webhook">Webhook</option>
+          <option value="schedule">Schedule</option>
         </select></div>
       <div id="wBatton"><label>Batton input</label>
         <select id="edBattonInput"></select></div>
+      <div id="wSched" style="display:none"><label>When</label>
+        <div class="row">
+          <input id="edSchedDate" type="date" title="one-shot date (empty = recurring)">
+          <input id="edSchedTime" type="time" required>
+        </div>
+        <div class="dayrow" id="edSchedDays">
+          <button type="button" data-d="6">S</button><button type="button" data-d="0">M</button><button type="button" data-d="1">T</button><button type="button" data-d="2">W</button><button type="button" data-d="3">T</button><button type="button" data-d="4">F</button><button type="button" data-d="5">S</button>
+        </div>
+        <div class="dim" style="font-size:11px">date set = runs once · days = weekly · neither = daily</div></div>
       <div><label>Then</label>
         <select id="edAction" onchange="actionChanged()">
           <option value="sync">Sync play (prepare + go)</option>
@@ -116,9 +132,12 @@
           <option value="exit_ui">Exit to Kodi UI</option>
           <option value="restart">Restart playlist</option>
           <option value="reboot">Reboot display</option>
+          <option value="playlist">Apply playlist</option>
         </select></div>
       <div id="wItem" style="display:none"><label>Item</label>
         <input id="edItem" placeholder="media name"></div>
+      <div id="wPlaylist" style="display:none"><label>Playlist</label>
+        <select id="edPlaylist"></select></div>
       <div><label>Displays</label>
         <select id="edPerformers" multiple size="3" style="min-width:170px"></select>
         <div class="dim" style="font-size:11px">empty = all online</div></div>
@@ -163,20 +182,24 @@ function toast(msg) {
   setTimeout(() => t.style.opacity = 0, 2200);
 }
 
-let battons = [], autos = {}, performers = [];
+let battons = [], autos = {}, performers = [], collections = [], playlists = {};
 
 async function refresh() {
-  const [b, a, p] = await Promise.all([
+  const [b, a, p, c, pl] = await Promise.all([
     api("/api/battons"), api("/api/automations"), api("/api/performers"),
+    api("/api/collections"), api("/api/playlists"),
   ]);
   battons = b.battons || [];
   autos = a.automations || {};
   performers = p.performers || p.players || [];
+  collections = c.collections || [];
+  playlists = pl.playlists || {};
   renderPending(b.pending || []);
   renderBattons();
   renderAutos();
   fillInputs();
   fillPerformers();
+  fillPlaylists();
 }
 
 // -- Battons ---------------------------------------------------------------
@@ -248,6 +271,7 @@ async function delBatton(id) {
 
 // -- Automations -----------------------------------------------------------
 
+const DAYL = ["M", "T", "W", "T", "F", "S", "S"];
 function whenText(a) {
   const w = a.when || {};
   if (w.type === "batton") {
@@ -255,13 +279,21 @@ function whenText(a) {
     return `${esc(b?.name || w.batton_id)} → ${esc(w.input)}`;
   }
   if (w.type === "webhook") return `webhook <span class="mono dim">${esc(w.key)}</span>`;
+  if (w.type === "schedule") {
+    const what = w.date ? `on ${esc(w.date)}`
+      : (w.days && w.days.length)
+        ? (w.days.map(d => DAYL[d]).join("") || "days?")
+        : "daily";
+    return `${what} at ${esc(w.time || "?")}`;
+  }
   return esc(w.type || "?");
 }
 function thenText(a) {
   const t = a.then || {};
   const tgt = Array.isArray(t.performers) && t.performers.length
-    ? `${t.performers.length} display${t.performers.length > 1 ? "s" : ""}` : "all displays";
-  return `${esc(t.action)}${t.item ? " " + esc(t.item) : ""} → ${tgt}`;
+    ? `${t.performers.length} target${t.performers.length > 1 ? "s" : ""}` : "all displays";
+  const label = t.action === "playlist" ? `playlist ${esc(t.item || "?")}` : esc(t.action);
+  return `${label}${t.action !== "playlist" && t.item ? " " + esc(t.item) : ""} → ${tgt}`;
 }
 
 function renderAutos() {
@@ -298,16 +330,43 @@ function fillInputs() {
   if (cur) sel.value = cur;
 }
 function fillPerformers() {
-  $("edPerformers").innerHTML = performers.map(p =>
-    `<option value="${esc(p.id)}">${esc(p.name || p.id)}</option>`).join("");
+  const cols = collections.map(c =>
+    `<option value="${esc(c.id)}">&#9658; ${esc(c.name || c.id)}</option>`).join("");
+  $("edPerformers").innerHTML =
+    (cols ? `<optgroup label="Collections">${cols}</optgroup>` : "") +
+    `<optgroup label="Displays">` +
+    performers.map(p =>
+      `<option value="${esc(p.id)}">${esc(p.name || p.id)}</option>`).join("") +
+    `</optgroup>`;
+}
+function fillPlaylists() {
+  $("edPlaylist").innerHTML = Object.keys(playlists).map(n =>
+    `<option>${esc(n)}</option>`).join("")
+    || '<option value="">(no playlists)</option>';
+}
+// Schedule day buttons — S M T W T F S map to 6,0,1,2,3,4,5 (0=Mon).
+document.querySelectorAll("#edSchedDays button").forEach(b =>
+  b.addEventListener("click", () => b.classList.toggle("on")));
+function schedDaysGet() {
+  return [...document.querySelectorAll("#edSchedDays button.on")]
+    .map(b => +b.dataset.d).sort();
+}
+function schedDaysSet(days) {
+  const on = new Set(days || []);
+  document.querySelectorAll("#edSchedDays button").forEach(b =>
+    b.classList.toggle("on", on.has(+b.dataset.d)));
 }
 
 function whenTypeChanged() {
-  $("wBatton").style.display = $("edWhenType").value === "batton" ? "" : "none";
-  $("wHook").style.display = "none";
+  const t = $("edWhenType").value;
+  $("wBatton").style.display = t === "batton" ? "" : "none";
+  $("wSched").style.display = t === "schedule" ? "" : "none";
+  $("wHook").style.display = t === "webhook" ? "" : "none";
 }
 function actionChanged() {
-  $("wItem").style.display = $("edAction").value === "play_item" ? "" : "none";
+  const a = $("edAction").value;
+  $("wItem").style.display = a === "play_item" ? "" : "none";
+  $("wPlaylist").style.display = a === "playlist" ? "" : "none";
 }
 
 function resetEditor() {
@@ -325,8 +384,14 @@ function editAutomation(id) {
   if (a.when?.type === "batton") {
     $("edBattonInput").value = `${a.when.batton_id}|${a.when.input}`;
   }
+  if (a.when?.type === "schedule") {
+    $("edSchedDate").value = a.when.date || "";
+    $("edSchedTime").value = a.when.time || "";
+    schedDaysSet(a.when.days || []);
+  }
   $("edAction").value = a.then?.action || "sync";
   $("edItem").value = a.then?.item || "";
+  if (a.then?.action === "playlist") $("edPlaylist").value = a.then.item || "";
   for (const o of $("edPerformers").options) {
     o.selected = (a.then?.performers || []).includes(o.value);
   }
@@ -343,19 +408,35 @@ function editAutomation(id) {
 }
 
 async function saveAutomation() {
-  const when = $("edWhenType").value === "webhook"
+  const wt = $("edWhenType").value;
+  const when = wt === "webhook"
     ? { type: "webhook" }
-    : (() => {
-        const [batton_id, input] = ($("edBattonInput").value || "|").split("|");
-        if (!batton_id) return null;
-        return { type: "batton", batton_id, input };
-      })();
-  if (!when) return toast("pick a batton input first");
+    : wt === "schedule"
+      ? (() => {
+          const time = $("edSchedTime").value;
+          if (!time) return null;
+          const w = { type: "schedule", time };
+          const date = $("edSchedDate").value;
+          const days = schedDaysGet();
+          if (date) w.date = date;
+          else if (days.length) w.days = days;
+          return w;
+        })()
+      : (() => {
+          const [batton_id, input] = ($("edBattonInput").value || "|").split("|");
+          if (!batton_id) return null;
+          return { type: "batton", batton_id, input };
+        })();
+  if (!when) return toast(wt === "schedule" ? "pick a time first" : "pick a batton input first");
+  const act = $("edAction").value;
   const then = {
-    action: $("edAction").value,
+    action: act,
     performers: [...$("edPerformers").selectedOptions].map(o => o.value),
-    ...($("edItem").value.trim() ? { item: $("edItem").value.trim() } : {}),
+    ...(act === "playlist"
+      ? ($("edPlaylist").value ? { item: $("edPlaylist").value } : {})
+      : ($("edItem").value.trim() ? { item: $("edItem").value.trim() } : {})),
   };
+  if (act === "playlist" && !then.item) return toast("pick a playlist first");
   const body = {
     name: $("edName").value.trim() || "automation",
     when, then,

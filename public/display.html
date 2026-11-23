@@ -54,6 +54,12 @@
            border: 0; border-radius: 6px; padding: 8px 14px; font-size: 14px;
            cursor: pointer; }
   button.secondary { background: #24405f; }
+  .dayrow { display: flex; gap: 4px; }
+  .dayrow button { width: 28px; height: 28px; padding: 0; border-radius: 6px;
+                   border: 1px solid var(--edge); background: #060e1e;
+                   color: var(--dim); cursor: pointer; font-size: 12px; }
+  .dayrow button.on { background: var(--cyan); color: var(--navy);
+                      font-weight: 700; border-color: var(--cyan); }
   button.danger { background: #8c2f39; }
   button:active { filter: brightness(.85); }
   button.mini { padding: 3px 8px; font-size: 12px; }
@@ -204,10 +210,14 @@
         <p class="muted">0 = play forever. A counted run ends on its last pass
           and re-arms on the idle screen.</p>
         <label><input name="schedule_on" type="checkbox"> Restrict display hours</label>
-        <div class="row">
-          <label style="flex:1">Days <input name="schedule_days" placeholder="0,1,2,3,4"></label>
-          <label>From <input name="schedule_from" type="time"></label>
-          <label>Until <input name="schedule_to" type="time"></label>
+        <div class="row" style="align-items:center">
+          <label style="margin:0">Days</label>
+          <div class="dayrow" id="dayBtns">
+            <button type="button" data-d="6">S</button><button type="button" data-d="0">M</button><button type="button" data-d="1">T</button><button type="button" data-d="2">W</button><button type="button" data-d="3">T</button><button type="button" data-d="4">F</button><button type="button" data-d="5">S</button>
+          </div>
+          <input name="schedule_days" type="hidden">
+          <label style="margin:0">From <input name="schedule_from" type="time"></label>
+          <label style="margin:0">Until <input name="schedule_to" type="time"></label>
         </div>
         <p class="muted">0 = Monday. 'Until' earlier than 'from' spans
           midnight. Off-hours shows the image below — or a black screen.</p>
@@ -598,6 +608,20 @@ async function loadSettings() {
     if (el.type === 'checkbox') el.checked = v === true || v === 'true';
     else el.value = v;
   }
+  dayBtnsSet(settings.schedule_days ?? '0,1,2,3,4,5,6');
+}
+// Display-hours day buttons — S M T W T F S map to 6,0,1,2,3,4,5 (0=Mon).
+document.querySelectorAll('#dayBtns button').forEach(b =>
+  b.addEventListener('click', () => {
+    b.classList.toggle('on');
+    $('settingsForm').elements['schedule_days'].value =
+      [...document.querySelectorAll('#dayBtns button.on')]
+        .map(x => +x.dataset.d).sort().join(',');
+  }));
+function dayBtnsSet(v) {
+  const on = new Set(String(v).split(',').map(s => parseInt(s)).filter(n => !isNaN(n)));
+  document.querySelectorAll('#dayBtns button').forEach(b =>
+    b.classList.toggle('on', on.has(+b.dataset.d)));
 }
 async function saveSettings() {
   const f = $('settingsForm');

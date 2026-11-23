@@ -47,11 +47,13 @@ export function deletePlaylist(name) {
   save();
 }
 
-export async function syncPlaylist(name, { prune = false } = {}) {
+export async function syncPlaylist(name, { prune = false, targets = null } = {}) {
   const pl = playlists[name];
   if (!pl) return { error: 'unknown playlist' };
   const results = {};
-  for (const pid of pl.performers ?? pl.players) {
+  // targets overrides the playlist's own member list (automation-driven
+  // applies); null falls back to the assigned members.
+  for (const pid of targets ?? (pl.performers ?? pl.players ?? [])) {
     const r = { ok: true, pushed: [], pruned: [], missing: [] };
     results[pid] = r;
     try {

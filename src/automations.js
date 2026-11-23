@@ -14,7 +14,9 @@ export const hooksRouter = Router();
 //     "name": "Door opens the show",
 //     "enabled": true,
 //     "when": { "type": "batton", "batton_id": "btn-…", "input": "door" }
-//           | { "type": "webhook", "key": "whk-…" },
+//           | { "type": "webhook", "key": "whk-…" }
+//           | { "type": "schedule", "time": "09:00",
+//               "date": "2026-11-27"?, "days": [0,1,2]? },
 //     "then": { "action": "sync", "performers": ["hw-…"], "item": "…" },
 //     "cooldown_ms": 30000, "retrigger": "ignore" | "restart" | "queue",
 //     "lead_ms": 500
@@ -49,6 +51,24 @@ function validateWhen(w) {
   }
   if (w.type === 'webhook') {
     return { type: 'webhook', key: w.key || `whk-${randomBytes(12).toString('hex')}` };
+  }
+  if (w.type === 'schedule') {
+    // { time: "HH:MM" } required; { date: "YYYY-MM-DD" } = one-shot on
+    // that day (auto-disables after firing); { days: [0..6] } (0=Mon) =
+    // weekly recurring; neither = daily.
+    const time = String(w.time || '');
+    if (!/^([01]?\d|2[0-3]):[0-5]\d$/.test(time)) return null;
+    const out = { type: 'schedule', time };
+    if (w.date) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(w.date))) return null;
+      out.date = String(w.date);
+    }
+    if (Array.isArray(w.days)) {
+      out.days = w.days
+        .map(Number)
+        .filter((d) => Number.isInteger(d) && d >= 0 && d <= 6);
+    }
+    return out;
   }
   return null;
 }
@@ -103,6 +123,56 @@ export async function fireBattonEvent(battonId, inputId) {
 }
 
 // -- Webhook endpoint (public; key IS the credential) ---------------------
+
+// -- Schedule triggers ------------------------------------------------------
+// A 30s tick compares each schedule automation's date/days/time against
+// the local clock and fires once per matching minute. One-shot `date`
+// automations disable themselves after firing so they can't re-run next
+// year; `days` (or bare daily) ones fire every matching day.
+
+const firedSlots = new Map(); // auto id -> last fired "YYYY-MM-DD HH:MM"
+
+function localStamp(d) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ` +
+    `${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function scheduleDue(w, now) {
+  const stamp = localStamp(now);
+  const [dateStr, hm] = stamp.split(' ');
+  if (w.date && w.date !== dateStr) return false;
+  if (w.days && w.days.length && !w.days.includes((now.getDay() + 6) % 7)) {
+    return false;
+  }
+  return hm === w.time;
+}
+
+export function startScheduler(everyMs = 30_000) {
+  const t = setInterval(async () => {
+    const now = new Date();
+    for (const [id, auto] of Object.entries(map)) {
+      const w = auto.when;
+      if (w?.type !== 'schedule' || auto.enabled === false) continue;
+      if (!scheduleDue(w, now)) continue;
+      const stamp = localStamp(now);
+      if (firedSlots.get(id) === stamp) continue;
+      firedSlots.set(id, stamp);
+      console.log(`schedule fire: ${id} (${auto.name}) at ${stamp}`);
+      try {
+        await fireAutomation(id, auto);
+      } catch (e) {
+        console.log(`schedule fire failed ${id}: ${e.message}`);
+      }
+      if (w.date) {
+        auto.enabled = false;
+        save();
+      }
+    }
+  }, everyMs);
+  t.unref?.();
+  return t;
+}
 
 hooksRouter.post('/:key', async (req, res) => {
   const results = [];
