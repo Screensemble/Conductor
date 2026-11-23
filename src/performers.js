@@ -95,6 +95,9 @@ export function handlePerformerConnection(ws, req) {
         online: true,
         last_seen: new Date().toISOString(),
       });
+      // Every admitted display gets the admin verifier — the socket only
+      // reaches here after product + registry + per-device token checks,
+      // so the hash can never travel to an unauthenticated endpoint.
       ws.send(JSON.stringify({
         type: 'hello_ack',
         player_id: performerId,
@@ -178,11 +181,26 @@ export function handlePerformerConnection(ws, req) {
 // Heartbeat — terminate sockets that missed a ping so dead displays stop
 // showing as online (TCP alone can take hours to notice).
 export function startHeartbeat(wss, everyMs = 30_000) {
+  // Baseline so the first beat doesn't re-push what hello_ack just sent.
+  let lastAuthHash = adminPasswordHash();
   const t = setInterval(() => {
     for (const ws of wss.clients) {
       if (!ws.isAlive) { ws.terminate(); continue; }
       ws.isAlive = false;
       try { ws.ping(); } catch { /* closing */ }
+    }
+    // A changed admin password re-pushes the verifier to live displays
+    // so the degraded-mode gate accepts the new credential right away —
+    // a display offline during the change picks it up from its next
+    // hello_ack instead. A null hash (admin account deleted) clears the
+    // stored copy too.
+    const h = adminPasswordHash();
+    if (h !== lastAuthHash) {
+      lastAuthHash = h;
+      const msg = JSON.stringify({ type: 'auth_update', auth_hash: h });
+      for (const ws of live.values()) {
+        try { ws.send(msg); } catch { /* gone */ }
+      }
     }
   }, everyMs);
   t.unref?.();
