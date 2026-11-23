@@ -118,7 +118,7 @@
         <div class="dayrow" id="edSchedDays">
           <button type="button" data-d="6">S</button><button type="button" data-d="0">M</button><button type="button" data-d="1">T</button><button type="button" data-d="2">W</button><button type="button" data-d="3">T</button><button type="button" data-d="4">F</button><button type="button" data-d="5">S</button>
         </div>
-        <div class="dim" style="font-size:11px">date set = runs once · days = weekly · neither = daily</div></div>
+        <div class="dim" style="font-size:11px">date set = runs once · days = weekly · neither = daily · <span id="schedTz">server local time</span></div></div>
       <div><label>Then</label>
         <select id="edAction" onchange="actionChanged()">
           <option value="sync">Sync play (prepare + go)</option>
@@ -190,6 +190,9 @@ async function refresh() {
     api("/api/battons"), api("/api/automations"), api("/api/performers"),
     api("/api/collections"), api("/api/playlists"),
   ]);
+  api("/api/health").then(h => {
+    if (h?.tz) $("schedTz").textContent = `server time (${h.tz})`;
+  });
   battons = b.battons || [];
   autos = a.automations || {};
   performers = p.performers || p.players || [];

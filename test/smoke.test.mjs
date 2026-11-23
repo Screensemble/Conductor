@@ -6,10 +6,13 @@ import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { request } from 'node:http';
 import WebSocket from 'ws';
 
-const ROOT = new URL('..', import.meta.url).pathname;
+// fileURLToPath — URL.pathname yields '/C:/…' on Windows, which node
+// cannot spawn.
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const PORT = 18000 + Math.floor(Math.random() * 1000);
 const B = `http://127.0.0.1:${PORT}`;
 let proc, dir, cookie = '';
@@ -54,16 +57,32 @@ before(async () => {
     try { if ((await fetch(`${B}/api/health`)).ok) break; } catch { /* booting */ }
     await new Promise((r) => setTimeout(r, 100));
   }
-  await call('POST', '/api/auth/sign-in/username', { username: 'screensemble', password: 'screensemble' });
+  // The bootstrap seeds admin/admin behind a forced password change —
+  // sign in, set a real password, then re-auth for the suite.
+  await call('POST', '/api/auth/sign-in/username', { username: 'admin', password: 'admin' });
   const r = await call('POST', '/api/me/set-password', {
-    current_password: 'screensemble', new_password: 'smoke-test-pass-1',
+    current_password: 'admin', new_password: 'smoke-test-pass-1',
   });
   assert.equal(r.status, 200);
-  await call('POST', '/api/auth/sign-in/username', { username: 'screensemble', password: 'smoke-test-pass-1' });
+  await call('POST', '/api/auth/sign-in/username', { username: 'admin', password: 'smoke-test-pass-1' });
 });
 
-after(() => {
-  proc?.kill();
+after(async () => {
+  // Windows holds the child's auth.db lock briefly after kill — wait
+  // for exit, then retry the cleanup instead of failing EPERM.
+  if (proc) {
+    const exited = new Promise((r) => proc.once('exit', r));
+    proc.kill();
+    await Promise.race([exited, new Promise((r) => setTimeout(r, 3000))]);
+  }
+  for (let i = 0; i < 10; i++) {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+      return;
+    } catch {
+      await new Promise((r) => setTimeout(r, 200));
+    }
+  }
   rmSync(dir, { recursive: true, force: true });
 });
 

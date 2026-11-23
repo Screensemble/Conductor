@@ -38,6 +38,9 @@ export function cleanName(name) {
 // Library names must be plain media filenames — no dotfiles, '.', '..',
 // or extensions the library wouldn't list anyway.
 export function validName(name) {
+  // Path separators mean a traversal attempt — reject it outright
+  // rather than silently basename it away and report success.
+  if (/[\\/]/.test(String(name || ''))) return null;
   const n = cleanName(name);
   if (!n || n.length > 200 || n.startsWith('.')) return null;
   const ext = extname(n).toLowerCase();

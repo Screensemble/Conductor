@@ -31,6 +31,7 @@ import {
   performerBaseUrl,
   performerOnline,
   probeClock,
+  pushAuthHash,
   requestFromPerformer,
   sendToPerformer,
   startHeartbeat,
@@ -91,7 +92,14 @@ app.use((req, res, next) =>
 
 // -- Open endpoints (no session) -------------------------------------------
 app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', role: config.serverRole });
+  res.json({
+    status: 'ok',
+    role: config.serverRole,
+    // Schedule automations fire on this clock — the UI shows it so
+    // "18:00" is unambiguous when the conductor's TZ differs from a
+    // viewer's (e.g. an unset container TZ reading UTC).
+    tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  });
 });
 
 // Identity for pairing: displays REQUIRE this endpoint before showing the
@@ -256,6 +264,10 @@ app.post('/api/me/set-password', async (req, res) => {
       .json({ error: e?.body?.message || e.message || 'password change failed' });
   }
   clearChange(req.user.id);
+  // Push the new verifier to live displays immediately — the heartbeat
+  // would catch it within a tick, but a rotated password should reach
+  // a display before anyone drops the conductor for a fallback test.
+  pushAuthHash();
   res.json({ ok: true });
 });
 
@@ -838,10 +850,16 @@ app.post('/api/conductor/:cmd', async (req, res) => {
   }
 
   if (cmd === 'cancel') {
-    // Cancel a staged session — displays resume their normal sequence.
+    // Cancel a staged session — 'cancel' clears the armed state on the
+    // display synchronously, so an immediate re-prepare can't be wiped
+    // by a deferred ambient restart. 'restart' follows for builds that
+    // predate the cancel command (it's a no-op-ish requeue on new ones).
     const sent = [...conductor.performers].filter((id) =>
-      sendToPerformer(id, { type: 'command', cmd: 'restart' })
+      sendToPerformer(id, { type: 'command', cmd: 'cancel' })
     );
+    for (const id of conductor.performers) {
+      sendToPerformer(id, { type: 'command', cmd: 'restart' });
+    }
     conductor.prepared = false;
     conductor.performers = new Set();
     return res.json({ ok: true, cmd, delivered: sent.length });

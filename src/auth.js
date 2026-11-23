@@ -50,7 +50,16 @@ export const auth = betterAuth({
   // Session cookies are SameSite=Lax (cross-site POSTs never carry them),
   // so CSRF is already covered — disabling the Fetch-Metadata check lets
   // non-browser clients (curl, scripts, agents) call auth endpoints too.
-  advanced: { disableCSRFCheck: true },
+  // Secure cookies only when the deployment actually serves TLS: the
+  // Docker image sets NODE_ENV=production, which would otherwise mark
+  // the session cookie Secure — browsers then drop it on the plain-HTTP
+  // LAN origins this system runs on, and login loops forever.
+  advanced: {
+    disableCSRFCheck: true,
+    useSecureCookies:
+      process.env.SECURE_COOKIES === 'true' ||
+      (process.env.BETTER_AUTH_URL || '').startsWith('https://'),
+  },
   // No self-registration — admins create accounts (POST /api/users).
   emailAndPassword: { enabled: true, disableSignUp: true },
   plugins: [username(), admin()],

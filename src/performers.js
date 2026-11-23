@@ -180,28 +180,35 @@ export function handlePerformerConnection(ws, req) {
 
 // Heartbeat — terminate sockets that missed a ping so dead displays stop
 // showing as online (TCP alone can take hours to notice).
+// A changed admin password re-pushes the verifier to live displays so
+// the degraded-mode gate accepts the new credential right away — a
+// display offline during the change picks it up from its next hello_ack
+// instead. A null hash (admin account deleted) clears the stored copy.
+// Called by the heartbeat diff and directly from set-password for an
+// instant push (the heartbeat is only the catch-up path).
+let lastAuthHash = null;
+export function pushAuthHash() {
+  const h = adminPasswordHash();
+  if (h === lastAuthHash) return 0;
+  lastAuthHash = h;
+  const msg = JSON.stringify({ type: 'auth_update', auth_hash: h });
+  let n = 0;
+  for (const ws of live.values()) {
+    try { ws.send(msg); n++; } catch { /* gone */ }
+  }
+  return n;
+}
+
 export function startHeartbeat(wss, everyMs = 30_000) {
   // Baseline so the first beat doesn't re-push what hello_ack just sent.
-  let lastAuthHash = adminPasswordHash();
+  lastAuthHash = adminPasswordHash();
   const t = setInterval(() => {
     for (const ws of wss.clients) {
       if (!ws.isAlive) { ws.terminate(); continue; }
       ws.isAlive = false;
       try { ws.ping(); } catch { /* closing */ }
     }
-    // A changed admin password re-pushes the verifier to live displays
-    // so the degraded-mode gate accepts the new credential right away —
-    // a display offline during the change picks it up from its next
-    // hello_ack instead. A null hash (admin account deleted) clears the
-    // stored copy too.
-    const h = adminPasswordHash();
-    if (h !== lastAuthHash) {
-      lastAuthHash = h;
-      const msg = JSON.stringify({ type: 'auth_update', auth_hash: h });
-      for (const ws of live.values()) {
-        try { ws.send(msg); } catch { /* gone */ }
-      }
-    }
+    pushAuthHash();
   }, everyMs);
   t.unref?.();
   wss.on('close', () => clearInterval(t));
