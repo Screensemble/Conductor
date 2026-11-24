@@ -567,16 +567,24 @@ app.put('/api/library/:name', async (req, res) => {
     return res.status(400).json({ error: 'duration must be 1-86400 seconds' });
   }
   const meta = setItemMeta(name, { duration: d == null ? null : +d });
-  let applied = 0;
-  for (const pid of livePerformerIds()) {
-    try {
-      await requestFromPerformer(String(pid), {
-        type: 'media_op', op: 'duration', name,
-        seconds: meta.duration || 0,
-      }, 5000);
-      applied++;
-    } catch { /* offline — push/sync carries it later */ }
-  }
+  // Fan out in parallel and only to displays whose catalog lists the
+  // file — a blanket duration op would leave an orphan state entry on
+  // displays that never received it.
+  const settled = await Promise.allSettled(
+    livePerformerIds().map(async (pid) => {
+      const media = await requestFromPerformer(
+        String(pid), { type: 'get_media' }, 5000);
+      if ((media.items || []).some((i) => i.name === name)) {
+        await requestFromPerformer(String(pid), {
+          type: 'media_op', op: 'duration', name,
+          seconds: meta.duration || 0,
+        }, 5000);
+        return true;
+      }
+      return false;
+    }),
+  );
+  const applied = settled.filter((s) => s.value === true).length;
   res.json({ ok: true, meta, applied });
 });
 
