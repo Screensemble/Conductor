@@ -2,7 +2,7 @@
 <html><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Screensemble — Battons</title>
+<title>Screensemble — Hardware buttons</title>
 <link rel="icon" type="image/png" href="/favicon.png">
 <style>
   * { box-sizing: border-box; }
@@ -61,6 +61,7 @@
   .picklist label { display: flex; gap: 8px; align-items: center;
                     padding: 2px 0; font-size: 13px; color: var(--text);
                     margin: 0; }
+  .dim a { color: var(--cyan); }
   .dayrow { display: flex; gap: 4px; margin-top: 4px; }
   .dayrow button { width: 30px; height: 30px; padding: 0; border-radius: 6px;
                    border: 1px solid var(--edge); background: #060e1e;
@@ -78,7 +79,7 @@
 </head><body>
 <div id="topnav" data-page="automations"></div>
 <main>
-  <h2>Battons</h2>
+  <h2>Hardware buttons <small style="color:var(--dim);font-weight:400">(Battons)</small></h2>
   <div id="pending" class="card" style="display:none"></div>
   <div class="card"><table>
     <tr><th></th><th>Name</th><th>Inputs</th><th>Version</th><th>IP</th>
@@ -118,7 +119,7 @@
         <div class="dim" style="font-size:11px">date set = runs once · days = weekly · neither = daily · <span id="schedTz">server local time</span></div></div>
       <div><label>Then</label>
         <select id="edAction" onchange="actionChanged()">
-          <option value="sync">Sync play (prepare + go)</option>
+          <option value="sync">Play in sync</option>
           <option value="prepare">Prepare</option>
           <option value="perform">Perform (go)</option>
           <option value="play_item">Play item</option>

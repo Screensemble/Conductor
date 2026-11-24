@@ -264,7 +264,7 @@
     <div class="panel">
       <div class="row">
         <button onclick="cmd('restart')">Restart content</button>
-        <button class="secondary" onclick="cmd('restart_app')">Restart performer</button>
+        <button class="secondary" onclick="cmd('restart_app')">Restart app</button>
         <button class="danger" onclick="cmd('stop')">Stop playback</button>
       </div>
       <p class="muted">Commands travel over the display's live socket —
@@ -396,19 +396,19 @@ function rowHtml(i, draggable) {
     ? `<input class="dur" type="number" min="1" value="${escH(i.duration || '')}" placeholder="10"
        title="seconds (empty = 10)" onchange="setDuration(${n}, this.value)">`
     : '—';
-  const sizeCell = i.size ? (i.size / 1048576).toFixed(1) + ' MB' : '—';
+  const sizeCell = i.size ? fmtBytes(i.size) : '—';
   const editRow = editName === i.name ? `<tr class="editrow"><td colspan="7">${editHtml(i)}</td></tr>` : '';
   return `<tr ${draggable ? 'draggable="true"' : ''} data-name="${escH(i.name)}"
       class="${i.enabled ? '' : 'inactive-row'}">` +
     `<td class="handle">${draggable ? '⋮⋮' : ''}</td>` +
     `<td>${thumbHtml(i)}</td>` +
-    `<td><b>${escH(i.name)}</b>${badges}` +
+    `<td class="cell-name"><b>${escH(i.name)}</b>${badges}` +
     `<div class="muted" style="font-size:12px">${escH(i.kind)}</div></td>` +
-    `<td class="num">${sizeCell}</td>` +
-    `<td class="num">${durCell}</td>` +
-    `<td><input type="checkbox" ${i.enabled ? 'checked' : ''}
+    `<td class="num" data-l="Size">${sizeCell}</td>` +
+    `<td class="num" data-l="Sec">${durCell}</td>` +
+    `<td data-l="On"><input type="checkbox" ${i.enabled ? 'checked' : ''}
       onchange="toggleItem(${n}, this.checked)"></td>` +
-    `<td class="num">` +
+    `<td class="num cell-acts">` +
     `<button class="mini secondary" title="play now" onclick="playItem(${n})">▶</button> ` +
     `<button class="mini secondary" title="edit" aria-label="edit" onclick="toggleEdit(${n})">${ic("edit")}</button> ` +
     `<button class="mini secondary" title="move up" onclick="moveItem(${n},-1)">↑</button> ` +
@@ -418,7 +418,7 @@ function rowHtml(i, draggable) {
 }
 
 function tableHtml(items, draggable) {
-  return '<table><tr><th></th><th></th><th>Name</th><th class="num">Size</th>' +
+  return '<table class="rstack"><tr><th></th><th></th><th>Name</th><th class="num">Size</th>' +
     '<th class="num">Sec</th><th>On</th><th></th></tr>' +
     items.map(i => rowHtml(i, draggable)).join('') + '</table>';
 }

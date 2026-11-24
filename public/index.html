@@ -102,11 +102,11 @@
 <div id="topnav" data-page="displays"></div>
 <nav class="subnav">
   <button id="tabDisplays" class="on" onclick="showTab('displays')">Displays</button>
-  <button id="tabConductor" onclick="showTab('conductor')">Conductor</button>
+  <button id="tabConductor" onclick="showTab('conductor')">Sync playback</button>
   <button id="tabPair" onclick="showTab('pair')">Pairing</button>
   <span style="flex:1"></span>
   <span id="onlineCount" style="align-self:center;font-size:12px;color:var(--dim)"></span>
-  <span id="serverName" style="align-self:center;font-size:12px;color:var(--dim)"></span>
+  <span id="serverName" class="hide-phone" style="align-self:center;font-size:12px;color:var(--dim)"></span>
 </nav>
 <main>
   <div id="displays">
@@ -124,31 +124,31 @@
 
   <div id="conductor" class="hidden">
     <div class="card">
-      <h2>Conductor — synchronized playback</h2>
+      <h2>Sync playback</h2>
       <div class="big">
-        <button class="prepare" onclick="conduct('prepare')">PREPARE</button>
-        <button class="perform" onclick="conduct('perform')">PERFORM</button>
-        <button class="prepare" onclick="conduct('cancel')">CANCEL</button>
+        <button class="prepare" onclick="conduct('prepare')">Get ready</button>
+        <button class="perform" onclick="conduct('perform')">Play now</button>
+        <button class="prepare" onclick="conduct('cancel')">Cancel</button>
       </div>
       <div class="pad row">
-        <label>Release when
+        <label>Start when
           <select id="policy">
-            <option value="all">all staged</option>
+            <option value="all">all ready</option>
             <option value="min">at least</option>
             <option value="any">proceed anyway</option>
           </select>
           <input id="minReady" type="number" min="1" value="1" style="width:60px" title="minimum ready (for 'at least')">
-          staged
+          ready
         </label>
-        <label>lead
-          <input id="leadMs" type="number" min="0" max="30000" step="50" value="500" style="width:80px"> ms
+        <label>delay
+          <input id="leadMs" type="number" min="0" max="30" step="0.1" value="0.5" style="width:80px"> s
         </label>
       </div>
       <div class="pad dim">
-        Prepare probes each display's clock and stages playlist item 1 — videos
-        pause on their first frame, images show statically. Go converts one
-        release instant into every display's own clock so they all start
-        together regardless of socket timing.
+        Get ready loads the first playlist item on every display — videos
+        pause on their first frame, images show statically. Play now picks
+        one start instant and converts it into each display's own clock, so
+        they all begin together regardless of network timing.
       </div>
     </div>
     <div class="card">
@@ -179,8 +179,7 @@
 <footer>
   <span id="foot"></span>
   <span style="margin-left:auto">
-    <a class="link" href="/api/backup">Download backup</a> ·
-    restore: POST a backup .tar.gz to /api/backup/restore, then restart
+    <a class="link" href="/system.html">Backup &amp; restore → System</a>
   </span>
 </footer>
 
@@ -251,7 +250,7 @@ function render() {
       <td class="cell-dot"><span class="dot ${dot}"></span></td>
       <td class="cell-name"><a class="name" href="/display.html?id=${encodeURIComponent(p.id)}"
           title="manage this display">${esc(p.name || p.id)}</a>${labels}
-          ${(st.prepared ?? st.armed) ? '<span class="badge warn">PREPARED</span>' : ""}
+          ${(st.prepared ?? st.armed) ? '<span class="badge warn">READY</span>' : ""}
           ${p.name ? `<div class="dim mono" style="font-size:11px">${esc(p.id)}</div>` : ""}</td>
       <td class="dim" data-l="Version">${esc(p.client_version || "—")}</td>
       <td class="dim" data-l="Last seen">${ago(p.last_seen)}</td>
@@ -259,12 +258,12 @@ function render() {
           ${st.maintenance ? '<span class="badge warn">MENU</span>' : ""}</td>
       <td class="dim" data-l="Free">${st.free_gb != null ? esc(st.free_gb) + " GB" : "—"}</td>
       <td class="cell-acts">
-        <button class="act" title="playlist" aria-label="playlist" onclick="togglePlaylist(${jsArg(p.id)}, this)">${ic("list")}</button>
+        <button class="act" title="playlist" aria-label="playlist" onclick="togglePlaylist(${jsArg(p.id)}, this)">${ic("list")} Playlist</button>
         <button class="act" title="restart content" aria-label="restart content" onclick="cmd(${jsArg(p.id)},'restart')">${ic("restart")} Restart</button>
         <button class="act" title="stop to standby" aria-label="stop to standby" onclick="cmd(${jsArg(p.id)},'stop')">${ic("stop")} Stop</button>
         <button class="act" title="reboot app" aria-label="reboot app" onclick="cmd(${jsArg(p.id)},'restart_app')">${ic("power")} App</button>
-        <button class="act" title="edit labels" aria-label="edit labels" onclick="editLabels(${jsArg(p.id)}, this)">${ic("edit")}</button>
-        <button class="act danger" title="remove display" aria-label="remove display" onclick="removePlayer(${jsArg(p.id)})">${ic("x")}</button>
+        <button class="act" title="rename and labels" aria-label="rename and labels" onclick="editLabels(${jsArg(p.id)}, this)">${ic("edit")} Rename</button>
+        <button class="act danger" title="remove display" aria-label="remove display" onclick="removePlayer(${jsArg(p.id)})">${ic("x")} Remove</button>
       </td>
     </tr>`;
   }).join("");
@@ -351,7 +350,7 @@ async function conduct(c) {
   const body = c === "perform" ? {
     policy: $("policy").value,
     min_ready: Number($("minReady").value) || 1,
-    lead_ms: Number($("leadMs").value) || 500,
+    lead_ms: Math.round((Number($("leadMs").value) || 0.5) * 1000),
   } : {};
   const r = await api(`/api/conductor/${c}`, {
     method: "POST",
@@ -360,7 +359,7 @@ async function conduct(c) {
   });
   if (r.error) toast(`${c.toUpperCase()}: ${r.error}`);
   else toast(c === "perform"
-    ? `PERFORM → released ${Object.values(r.results || {}).filter(x => x.released).length} display(s)`
+    ? `Play now → released ${Object.values(r.results || {}).filter(x => x.released).length} display(s)`
     : `${c.toUpperCase()} → ${r.delivered ?? 0} display(s)`);
   setTimeout(refresh, 500);
 }
@@ -369,18 +368,18 @@ async function renderReady() {
   const d = await api("/api/conductor");
   const rows = d.performers || [];
   $("readyCount").textContent =
-    d.prepared ? `— ${d.ready}/${d.total} staged` : "";
+    d.prepared ? `— ${d.ready}/${d.total} ready` : "";
   const nameOf = (id) =>
     (players.find(p => p.id === id) || {}).name || id;
   $("ready").innerHTML = rows.length ? rows.map(r => {
     return `<tr>
       <td><span class="dot ${r.online ? (r.prepared ? "prepared" : "on") : ""}"></span></td>
       <td><a class="name" href="/display.html?id=${encodeURIComponent(r.performer_id)}">${esc(nameOf(r.performer_id))}</a></td>
-      <td class="dim">${r.prepared ? '<span class="badge warn">PREPARED</span>'
+      <td class="dim">${r.prepared ? '<span class="badge warn">READY</span>'
         : (r.online ? "online" : "offline")}</td>
       <td class="dim">${r.clock ? `±${r.clock.rtt}ms rtt` : "no probe"}</td>
     </tr>`;
-  }).join("") : `<tr><td colspan="4" class="dim">Prepare to stage the displays.</td></tr>`;
+  }).join("") : `<tr><td colspan="4" class="dim">Get ready stages the displays.</td></tr>`;
 }
 
 async function refreshPending() {

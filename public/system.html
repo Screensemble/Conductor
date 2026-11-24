@@ -93,8 +93,8 @@ async function load() {
       row("Min client version", esc(info.min_client_version || "—")) +
       row("Timezone", esc(health?.tz || "—") +
         ` <span class="dim">— schedule automations fire on this clock</span>`) +
-      row("Server time", esc(new Date().toLocaleString() +
-        ` <span class="dim">(browser view)</span>`));
+      row("Server time", esc(new Date().toLocaleString()) +
+        ` <span class="dim">(browser view)</span>`);
   }
   const ps = perf?.performers || perf?.players || [];
   if (ps.length) {

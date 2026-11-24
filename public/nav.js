@@ -49,11 +49,17 @@
   .tw { overflow-x: auto; margin: 0 -4px; padding: 0 4px; }
   @media (max-width: 700px) {
     header.snav { padding: 8px 10px; gap: 8px; flex-wrap: wrap; }
-    nav.snav-links { order: 3; flex-basis: 100%; margin-left: 0; }
+    nav.snav-links { order: 3; flex-basis: 100%; margin-left: 0;
+      -webkit-mask-image: linear-gradient(to right, #000 92%, transparent);
+      mask-image: linear-gradient(to right, #000 92%, transparent); }
+    nav.subnav {
+      -webkit-mask-image: linear-gradient(to right, #000 92%, transparent);
+      mask-image: linear-gradient(to right, #000 92%, transparent); }
     nav.snav-links a { padding: 8px 10px; }
     .snav-brand .mark { height: 26px; }
     .snav-brand .wordmark { height: 14px; }
     main { padding: 12px 10px !important; }
+    .hide-phone { display: none !important; }
   }
   /* Stacked-card mode for tables that opt in (class="rstack"). */
   @media (max-width: 640px) {

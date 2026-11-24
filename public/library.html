@@ -217,13 +217,14 @@ function renderLib() {
       '<div class="empty">library is empty — upload media above</div>';
     return;
   }
-  $('libList').innerHTML = '<table><tr><th></th><th></th><th>Name</th>' +
-    '<th>Kind</th><th class="num">Size</th><th></th></tr>' +
+  $('libList').innerHTML = '<table class="rstack"><tr><th></th><th></th>' +
+    '<th>Name</th><th>Kind</th><th class="num">Size</th><th></th></tr>' +
     libItems.map(i =>
       `<tr><td><input type="checkbox" class="libsel" value="${escH(i.name)}"></td>` +
-      `<td>${thumbHtml(i)}</td><td><b>${escH(i.name)}</b></td>` +
-      `<td class="muted">${escH(i.kind)}</td><td class="num">${fmtSize(i.size)}</td>` +
-      `<td class="num">` +
+      `<td>${thumbHtml(i)}</td><td class="cell-name"><b>${escH(i.name)}</b></td>` +
+      `<td class="muted" data-l="Kind">${escH(i.kind)}</td>` +
+      `<td class="num" data-l="Size">${fmtSize(i.size)}</td>` +
+      `<td class="num cell-acts">` +
       (i.kind === 'video'
         ? `<button class="mini" title="extract a still frame" ` +
           `onclick="frameRow(this, ${jsArg(i.name)})">frame</button> ` : '') +

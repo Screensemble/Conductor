@@ -97,16 +97,20 @@ async function load() {
     return;
   }
   const { users } = await r.json();
-  $('rows').innerHTML = users.map(u => `
+  const admins = users.filter(u => u.role === 'admin').length;
+  $('rows').innerHTML = users.map(u => {
+    const lastAdmin = u.role === 'admin' && admins === 1;
+    return `
     <tr data-id="${esc(u.id)}">
       <td>${esc(u.username || u.name)}</td>
       <td><span class="badge ${esc(u.role)}">${esc(u.role)}</span></td>
       <td>${u.must_change_password ? '<span class="badge flag">change required</span>' : '<span class="dimtxt">set</span>'}</td>
       <td class="rowbtns" style="text-align:right;white-space:nowrap">
         <button class="btn dim" onclick="resetPw(${jsArg(u.id)},${jsArg(u.username || u.name)})">reset</button>
-        <button class="btn danger" onclick="delUser(${jsArg(u.id)},${jsArg(u.username || u.name)})">delete</button>
+        ${lastAdmin ? '' : `<button class="btn danger" onclick="delUser(${jsArg(u.id)},${jsArg(u.username || u.name)})">delete</button>`}
       </td>
-    </tr>`).join('') || '<tr><td colspan="4" class="dimtxt">none</td></tr>';
+    </tr>`;
+  }).join('') || '<tr><td colspan="4" class="dimtxt">none</td></tr>';
 }
 
 $('add').onsubmit = async e => {

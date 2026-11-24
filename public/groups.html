@@ -62,7 +62,7 @@
   .picklist label { display: flex; gap: 8px; align-items: center;
                     padding: 3px 0; font-size: 13px; color: var(--text);
                     margin: 0; }
-  .picklist a { color: var(--cyan); }
+  .picklist a, .dim a { color: var(--cyan); }
   .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
   .row > div { min-width: 140px; }
   .actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
@@ -93,7 +93,7 @@
       <div><label>Name</label><input id="edName" placeholder="Gallery wall"></div>
       <div>
         <label class="check"><input type="checkbox" id="edOrch">
-          Orchestrated — ensemble (prepare/perform as one)</label>
+          Sync group — members start together (ensemble)</label>
         <label class="check"><input type="checkbox" id="edMirror">
           Mirrored — same content on every member</label>
       </div>
