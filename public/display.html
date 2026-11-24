@@ -502,6 +502,14 @@ async function bulkDelete() {
 }
 
 function renderMedia() {
+  // Snapshot the open edit row's fields — the poll re-renders from
+  // server state and must not clobber edits in progress.
+  const snap = editName ? {
+    dur: $('eDur')?.value,
+    days: [...document.querySelectorAll('.sday')].map(c => c.checked),
+    start: $('sStart')?.value, end: $('sEnd')?.value,
+    from: $('sFrom')?.value, to: $('sTo')?.value,
+  } : null;
   const active = mediaItems.filter(i => i.enabled);
   const inactive = mediaItems.filter(i => !i.enabled);
   const names = new Set(mediaItems.map(i => i.name));
@@ -513,6 +521,15 @@ function renderMedia() {
   $('inactiveList').innerHTML = inactive.length
     ? tableHtml(inactive, false)
     : '<div class="empty">nothing disabled</div>';
+  if (snap) {
+    if ($('eDur')) $('eDur').value = snap.dur;
+    document.querySelectorAll('.sday').forEach((c, i) =>
+      c.checked = !!snap.days[i]);
+    if ($('sStart')) $('sStart').value = snap.start;
+    if ($('sEnd')) $('sEnd').value = snap.end;
+    if ($('sFrom')) $('sFrom').value = snap.from;
+    if ($('sTo')) $('sTo').value = snap.to;
+  }
   bindDnD();
 }
 

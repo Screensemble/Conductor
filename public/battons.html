@@ -336,6 +336,11 @@ function fillInputs() {
   if (cur) sel.value = cur;
 }
 function fillPerformers() {
+  // Preserve in-progress selections — the 5s refresh rebuilds this list
+  // and must not uncheck what the user is editing.
+  const was = new Set(
+    [...document.querySelectorAll("#edPerformers input:checked")]
+      .map(c => c.value));
   const cols = collections.map(c =>
     `<label><input type="checkbox" value="${esc(c.id)}">` +
     `&#9658; ${esc(c.name || c.id)}</label>`).join("");
@@ -346,6 +351,10 @@ function fillPerformers() {
       `<label><input type="checkbox" value="${esc(p.id)}">` +
       `${esc(p.name || p.id)}</label>`).join("")
     || '<span class="dim">none paired</span>';
+  if (was.size) {
+    document.querySelectorAll("#edPerformers input").forEach(c =>
+      c.checked = was.has(c.value));
+  }
 }
 function perfPickAll(on) {
   document.querySelectorAll("#edPerformers input").forEach(c => c.checked = on);
@@ -360,9 +369,11 @@ function perfSet(ids) {
     c.checked = on.has(c.value));
 }
 function fillPlaylists() {
-  $("edPlaylist").innerHTML = Object.keys(playlists).map(n =>
+  const sel = $("edPlaylist"), cur = sel.value;
+  sel.innerHTML = Object.keys(playlists).map(n =>
     `<option>${esc(n)}</option>`).join("")
     || '<option value="">(no playlists)</option>';
+  if (cur) sel.value = cur;
 }
 // Schedule day buttons — S M T W T F S map to 6,0,1,2,3,4,5 (0=Mon).
 document.querySelectorAll("#edSchedDays button").forEach(b =>

@@ -269,6 +269,25 @@ function render() {
       </td>
     </tr>`;
   }).join("");
+  // Re-anchor expanded rows (rename editor, playlist preview) — the
+  // fleet poll rebuilds the tbody wholesale and would otherwise wipe
+  // an open editor mid-typing. The detached nodes keep field values.
+  for (const [pid, rows] of [...openRows]) {
+    const anchor = tb.querySelector(`tr[data-id="${CSS.escape(pid)}"]`);
+    if (!anchor) { openRows.delete(pid); continue; }
+    let at = anchor;
+    for (const r of rows) { at.after(r); at = r; }
+  }
+}
+
+// Expanded rows under fleet rows — survives the 3s refresh rebuild.
+const openRows = new Map(); // pid -> [tr, ...]
+function addOpenRow(pid, tr) {
+  openRows.set(pid, [...(openRows.get(pid) || []), tr]);
+}
+function dropOpenRow(pid, tr) {
+  const left = (openRows.get(pid) || []).filter(r => r !== tr);
+  left.length ? openRows.set(pid, left) : openRows.delete(pid);
 }
 
 async function cmd(id, c) {
@@ -289,6 +308,7 @@ async function removePlayer(id) {
 function editLabels(id, btn) {
   const row = btn.closest("tr");
   if (row.nextSibling?.classList?.contains("editrow")) {
+    dropOpenRow(id, row.nextSibling);
     row.nextSibling.remove();
     return;
   }
@@ -301,6 +321,7 @@ function editLabels(id, btn) {
     <input id="le_${esc(id)}" value="${esc((p.labels || []).join(", "))}">
     <button onclick="saveLabels(${jsArg(id)})">Save</button></td>`;
   row.after(tr);
+  addOpenRow(id, tr);
 }
 
 async function saveLabels(id) {
@@ -325,6 +346,7 @@ async function saveLabels(id) {
 async function togglePlaylist(id, btn) {
   const row = btn.closest("tr");
   if (row.nextSibling?.classList?.contains("sublist")) {
+    dropOpenRow(id, row.nextSibling);
     row.nextSibling.remove();
     return;
   }
@@ -332,6 +354,7 @@ async function togglePlaylist(id, btn) {
   tr.className = "sublist";
   tr.innerHTML = `<td colspan="7" class="dim">loading…</td>`;
   row.after(tr);
+  addOpenRow(id, tr);
   const d = await api(`/api/performers/${encodeURIComponent(id)}/media`);
   const items = d.items || [];
   tr.firstChild.innerHTML = items.length

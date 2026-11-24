@@ -34,8 +34,16 @@ import {
   pushAuthHash,
   requestFromPerformer,
   sendToPerformer,
+  setStatusHook,
   startHeartbeat,
 } from './performers.js';
+import {
+  armWaitLoop,
+  disarmWaitLoop,
+  listWaitLoops,
+  onPerformerStatus,
+  waitLoopTargets,
+} from './waitloop.js';
 import { registry } from './registry.js';
 import { stageRestore, streamBackup } from './backup.js';
 import { extractFrame } from './frames.js';
@@ -75,6 +83,9 @@ import { fileURLToPath } from 'node:url';
 
 const app = express();
 app.disable('x-powered-by');
+
+// Wait-loop barriers observe every performer status message.
+setStatusHook(onPerformerStatus);
 
 const MAX_UPLOAD_BYTES = Number(process.env.MAX_UPLOAD_MB ?? 4096) * 1024 * 1024;
 const UPLOAD_PATH = /^\/api\/(library|(?:players|performers)\/[^/]+\/upload|backup\/restore)$/;
@@ -846,7 +857,7 @@ function conductorReadiness() {
 }
 
 app.get('/api/conductor', (_req, res) => {
-  res.json(conductorReadiness());
+  res.json({ ...conductorReadiness(), wait_loops: listWaitLoops() });
 });
 
 app.post('/api/conductor/:cmd', async (req, res) => {
@@ -854,10 +865,18 @@ app.post('/api/conductor/:cmd', async (req, res) => {
   const cmd = { arm: 'prepare', go: 'perform', disarm: 'cancel' }[
     req.params.cmd
   ] ?? req.params.cmd;
-  const targets = Array.isArray(req.body?.performers ?? req.body?.players)
-    ? resolveTargets(req.body.performers ?? req.body.players).filter((id) =>
+  const rawTargets = req.body?.performers ?? req.body?.players;
+  const targets = Array.isArray(rawTargets)
+    ? resolveTargets(rawTargets).filter((id) =>
         livePerformerIds().includes(id))
     : livePerformerIds();
+  // Wait-loop ensembles among the named collections — their members get
+  // the loop_wait flag so each pass end re-arms for the next release.
+  const waitMembers = new Set(
+    (Array.isArray(rawTargets) ? waitLoopTargets(rawTargets) : []).flatMap(
+      (c) => c.members,
+    ),
+  );
 
   if (cmd === 'prepare') {
     conductor.performers = new Set(targets);
@@ -867,7 +886,11 @@ app.post('/api/conductor/:cmd', async (req, res) => {
     // perform fires.
     await Promise.allSettled(targets.map((id) => probeClock(id)));
     const sent = targets.filter((id) =>
-      sendToPerformer(id, { type: 'command', cmd: 'prepare' })
+      sendToPerformer(id, {
+        type: 'command',
+        cmd: 'prepare',
+        loop_wait: waitMembers.has(id),
+      })
     );
     return res.json({ ok: true, cmd, delivered: sent.length, performers: sent });
   }
@@ -898,10 +921,29 @@ app.post('/api/conductor/:cmd', async (req, res) => {
       const at = deadlineFor(id, leadMs);
       results[id] = at === null
         ? { released: false, reason: 'no clock sample' }
-        : { released: sendToPerformer(id, { type: 'command', cmd: 'perform', at_mono: at }), at_mono: at };
+        : { released: sendToPerformer(id, {
+            type: 'command',
+            cmd: 'perform',
+            at_mono: at,
+            loop_wait: waitMembers.has(id),
+          }), at_mono: at };
     }
     conductor.prepared = false;
     conductor.performers = new Set();
+    // Arm a wait-loop barrier for each wait-loop ensemble named in the
+    // targets — only members that actually released join the round.
+    if (Array.isArray(rawTargets)) {
+      for (const col of waitLoopTargets(rawTargets)) {
+        const released = col.members.filter((m) => results[m]?.released);
+        if (released.length) {
+          armWaitLoop(col.id, released, {
+            lead_ms: leadMs,
+            policy,
+            min_ready: minReady,
+          });
+        }
+      }
+    }
     return res.json({ ok: true, cmd, lead_ms: leadMs, results });
   }
 
@@ -910,15 +952,31 @@ app.post('/api/conductor/:cmd', async (req, res) => {
     // display synchronously, so an immediate re-prepare can't be wiped
     // by a deferred ambient restart. 'restart' follows for builds that
     // predate the cancel command (it's a no-op-ish requeue on new ones).
-    const sent = [...conductor.performers].filter((id) =>
+    const cancelTargets = Array.isArray(rawTargets)
+      ? new Set(targets)
+      : new Set(conductor.performers);
+    const sent = [...cancelTargets].filter((id) =>
       sendToPerformer(id, { type: 'command', cmd: 'cancel' })
     );
-    for (const id of conductor.performers) {
+    for (const id of cancelTargets) {
       sendToPerformer(id, { type: 'command', cmd: 'restart' });
+    }
+    // Drop any wait-loop barrier the cancel touches — named collections
+    // directly, or a barrier whose members are all in the cancel set.
+    let disarmed = 0;
+    if (Array.isArray(rawTargets)) {
+      for (const col of waitLoopTargets(rawTargets)) {
+        disarmed += disarmWaitLoop(col.id);
+      }
+    }
+    for (const wl of listWaitLoops()) {
+      if (wl.waiting.concat(wl.done).every((id) => cancelTargets.has(id))) {
+        disarmed += disarmWaitLoop(wl.collection);
+      }
     }
     conductor.prepared = false;
     conductor.performers = new Set();
-    return res.json({ ok: true, cmd, delivered: sent.length });
+    return res.json({ ok: true, cmd, delivered: sent.length, ...(disarmed ? { wait_loops_disarmed: disarmed } : {}) });
   }
 
   res.status(400).json({ error: 'prepare|perform|cancel only' });

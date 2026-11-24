@@ -223,11 +223,16 @@ function renderLib() {
       '<div class="empty">library is empty — upload media above</div>';
     return;
   }
+  // Preserve in-progress selections — the refresh poll rebuilds this
+  // list and must not uncheck what the user is selecting.
+  const libSel = new Set(
+    [...document.querySelectorAll('.libsel:checked')].map(c => c.value));
   $('libList').innerHTML = '<table class="rstack"><thead><tr><th></th><th></th>' +
     '<th>Name</th><th>Kind</th><th class="num">Size</th><th class="num">Sec</th><th></th>' +
     '</tr></thead><tbody>' +
     libItems.map(i =>
-      `<tr><td><input type="checkbox" class="libsel" value="${escH(i.name)}"></td>` +
+      `<tr><td><input type="checkbox" class="libsel" value="${escH(i.name)}"` +
+      `${libSel.has(i.name) ? ' checked' : ''}></td>` +
       `<td>${thumbHtml(i)}</td><td class="cell-name"><b>${escH(i.name)}</b></td>` +
       `<td class="muted" data-l="Kind">${escH(i.kind)}</td>` +
       `<td class="num" data-l="Size">${fmtSize(i.size)}</td>` +
@@ -294,10 +299,14 @@ async function frameSave(btn, name) {
 }
 
 function renderTargets() {
+  // Preserve checked push targets across the refresh poll.
+  const was = new Set(
+    [...document.querySelectorAll('.pushtarget:checked')].map(c => c.value));
   $('pushTargets').innerHTML = players.length
     ? players.map(p =>
         `<label class="inline dperf"><span class="dot${p.online ? ' on' : ''}"></span>` +
-        `<input type="checkbox" class="pushtarget" value="${escH(p.id)}">` +
+        `<input type="checkbox" class="pushtarget" value="${escH(p.id)}"` +
+        `${was.has(p.id) ? ' checked' : ''}>` +
         `${escH(p.name || p.id)}</label>`).join('')
     : '<span class="muted">no displays online</span>';
 }
@@ -406,20 +415,29 @@ function selectPlaylist(name) {
   plItems = [...pl.items];
   plPids = new Set(pl.players);
   renderPlList(); renderPlEditor();
+  $('plName').value = selPl;   // set once — the poll must not clobber edits
 }
 function newPlaylist() {
   selPl = 'new playlist';
   plItems = []; plPids = new Set();
   renderPlList(); renderPlEditor();
+  $('plName').value = selPl;
+}
+
+function plPidToggle(box) {
+  // Keep plPids in sync live — the refresh poll rebuilds the checkbox
+  // list, so unsaved selections must live in the model, not the DOM.
+  if (box.checked) plPids.add(box.value); else plPids.delete(box.value);
 }
 
 function renderPlEditor() {
   $('plEditor').hidden = !selPl;
   $('plHint').hidden = !!selPl;
   if (!selPl) return;
-  $('plName').value = selPl;
+  const addSel = $('plAdd').value;
   $('plAdd').innerHTML = libItems.map(i =>
     `<option value="${escH(i.name)}">${escH(i.name)}</option>`).join('');
+  if (addSel) $('plAdd').value = addSel;
   $('plItems').innerHTML = plItems.length
     ? plItems.map((n, i) => {
         const it = libItems.find(x => x.name === n);
@@ -436,7 +454,8 @@ function renderPlEditor() {
       ? players.map(p =>
           `<label class="inline dperf"><span class="dot${p.online ? ' on' : ''}"></span>` +
           `<input type="checkbox" class="plpid" value="${escH(p.id)}" ` +
-          `${plPids.has(p.id) ? 'checked' : ''}>${escH(p.name || p.id)}</label>`
+          `${plPids.has(p.id) ? 'checked' : ''} ` +
+          `onchange="plPidToggle(this)">${escH(p.name || p.id)}</label>`
         ).join('')
       : '<span class="muted">none online</span>');
   $('syncRes').textContent = '';

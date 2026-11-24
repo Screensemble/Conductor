@@ -82,6 +82,8 @@
     A <b>group</b> is for targeting — send content and commands to all
     members. An <b>ensemble</b> ("orchestrated") also syncs timing:
     members get ready together and start on the same instant.
+    A <b>wait-loop</b> ensemble also loops together — members hold at
+    each pass boundary until everyone is ready for the next round.
     <b>Mirrored</b> members show identical content.
   </div>
   <div id="rows"></div>
@@ -92,10 +94,19 @@
     <div class="row">
       <div><label>Name</label><input id="edName" placeholder="Gallery wall"></div>
       <div>
-        <label class="check"><input type="checkbox" id="edOrch">
+        <label class="check"><input type="checkbox" id="edOrch"
+          onchange="$('edWaitRow').style.display = this.checked ? '' : 'none'">
           Sync group — members start together (ensemble)</label>
         <label class="check"><input type="checkbox" id="edMirror">
           Mirrored — same content on every member</label>
+        <div id="edWaitRow" style="display:none;margin-top:6px">
+          <label class="check"><input type="checkbox" id="edWaitLoop">
+            Wait loop — members loop each pass together</label>
+          <label style="margin-left:14px">Rounds
+            <input id="edRounds" type="number" min="0" max="10000" value="0"
+              style="width:64px" title="0 = loop together forever"></label>
+          <span class="dim" style="font-size:11px">0 = forever</span>
+        </div>
       </div>
     </div>
     <label>Members</label>
@@ -125,15 +136,17 @@ function toast(msg) {
   setTimeout(() => t.style.opacity = 0, 2200);
 }
 
-let collections = [], performers = [], library = [];
+let collections = [], performers = [], library = [], waitLoops = [];
 
 async function refresh() {
-  const [c, p, l] = await Promise.all([
+  const [c, p, l, cd] = await Promise.all([
     api("/collections"), api("/performers"), api("/library"),
+    api("/conductor"),
   ]);
   collections = c?.collections || [];
   performers = p?.performers || p?.players || [];
   library = (l?.items || []).map(i => i.name ?? i).sort();
+  waitLoops = cd?.wait_loops || [];
   render();
   fillMembers();
 }
@@ -141,7 +154,20 @@ async function refresh() {
 function perf(id) { return performers.find(p => p.id === id); }
 function typeLabel(c) {
   const base = c.orchestrated ? "Ensemble" : "Group";
-  return c.mirrored ? `${base} · mirrored` : base;
+  const wl = c.wait_loop
+    ? ` · wait-loop${c.loop_target ? `×${c.loop_target}` : ""}` : "";
+  return `${base}${c.mirrored ? " · mirrored" : ""}${wl}`;
+}
+function waitLine(c) {
+  const b = waitLoops.find(w => w.collection === c.id);
+  if (!b) return "";
+  const tgt = b.target ? `/${b.target}` : "";
+  return `<div class="dim" style="font-size:12px;margin-top:4px">` +
+    `Wait loop — round ${b.round}${tgt}` +
+    (b.waiting.length
+      ? ` · waiting on ${esc(b.waiting.join(", "))}`
+      : " · releasing…") +
+    `</div>`;
 }
 function memberChips(c) {
   if (!c.members?.length) return '<span class="dim">none</span>';
@@ -170,6 +196,7 @@ function render() {
         </div>
       </div>
       <div style="margin:8px 0">${memberChips(c)}</div>
+      ${waitLine(c)}
       <div class="actions">
         ${c.orchestrated ? `
           <button class="primary" title="release all staged members at once"
@@ -203,10 +230,19 @@ function render() {
 // -- Editor -----------------------------------------------------------------
 
 function fillMembers() {
+  // Preserve in-progress selections — the refresh poll rebuilds this
+  // list and must not uncheck what the user is editing.
+  const was = new Set(
+    [...document.querySelectorAll("#edMembers input:checked")]
+      .map(c => c.value));
   $("edMembers").innerHTML = performers.map(p =>
     `<label><input type="checkbox" value="${esc(p.id)}">` +
     `${p.online ? "●" : "○"} ${esc(p.name || p.id)}</label>`).join("")
     || '<span class="dim">no displays paired</span>';
+  if (was.size) {
+    document.querySelectorAll("#edMembers input").forEach(c =>
+      c.checked = was.has(c.value));
+  }
 }
 function pickAll(on) {
   document.querySelectorAll("#edMembers input").forEach(c => c.checked = on);
@@ -223,6 +259,8 @@ function membersSet(ids) {
 function resetEditor() {
   $("edId").value = ""; $("edName").value = "";
   $("edOrch").checked = false; $("edMirror").checked = false;
+  $("edWaitLoop").checked = false; $("edRounds").value = 0;
+  $("edWaitRow").style.display = "none";
   pickAll(false);
   $("edTitle").textContent = "New collection";
 }
@@ -232,6 +270,9 @@ function editCollection(id) {
   $("edId").value = c.id; $("edName").value = c.name || "";
   $("edOrch").checked = !!c.orchestrated;
   $("edMirror").checked = !!c.mirrored;
+  $("edWaitLoop").checked = !!c.wait_loop;
+  $("edRounds").value = c.loop_target || 0;
+  $("edWaitRow").style.display = c.orchestrated ? "" : "none";
   membersSet(c.members);
   $("edTitle").textContent = `Edit ${c.name || c.id}`;
   window.scrollTo(0, document.body.scrollHeight);
@@ -242,6 +283,8 @@ async function saveCollection() {
     name: $("edName").value.trim(),
     orchestrated: $("edOrch").checked,
     mirrored: $("edMirror").checked,
+    wait_loop: $("edOrch").checked && $("edWaitLoop").checked,
+    loop_target: Number($("edRounds").value) || 0,
     members: membersGet(),
   };
   if (!body.name) return toast("name the collection first");

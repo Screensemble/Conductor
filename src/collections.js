@@ -38,6 +38,16 @@ export function putCollection(data) {
     name: String(data.name ?? prev.name ?? '').trim().slice(0, 100),
     orchestrated: Boolean(data.orchestrated ?? prev.orchestrated),
     mirrored: Boolean(data.mirrored ?? prev.mirrored),
+    // Wait-loop (orchestrated ensembles only): members re-arm at each
+    // pass boundary and hold for the conductor's next synchronized
+    // release, so the whole ensemble loops round-for-round together.
+    // loop_target = synchronized rounds before releasing members back
+    // to ambient playback (0 = loop together forever).
+    wait_loop: Boolean(data.wait_loop ?? prev.wait_loop),
+    loop_target: Math.max(
+      0,
+      Math.min(10000, Number(data.loop_target ?? prev.loop_target) || 0),
+    ),
     members: [...new Set(
       (Array.isArray(data.members) ? data.members : prev.members ?? [])
         .map(String),

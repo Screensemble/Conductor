@@ -23,6 +23,13 @@ const live = new Map();        // player_id -> ws
 const pendingReq = new Map();  // req_id -> { resolve, timer }
 const pendingPing = new Map(); // nonce  -> { resolve, timer, t0, performerId }
 const clock = new Map();       // player_id -> { mono, rtt, at } best sample
+let statusHook = null;         // wait-loop barrier listener (set by index)
+
+// Called once at startup to observe every performer status message —
+// the wait-loop barrier keys member readiness off `round_done`.
+export function setStatusHook(fn) {
+  statusHook = typeof fn === 'function' ? fn : null;
+}
 let onPushProgress = () => {}; // set by uploads.js
 
 export function setPushProgressHandler(fn) {
@@ -163,6 +170,9 @@ export function handlePerformerConnection(ws, req) {
           }
         : {}),
     });
+    if (msg.type === 'status') {
+      statusHook?.(performerId, msg.status);
+    }
   });
 
   ws.isAlive = true;

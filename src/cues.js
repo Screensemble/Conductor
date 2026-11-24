@@ -11,6 +11,7 @@ import {
 import { registry } from './registry.js';
 import { resolveTargets } from './collections.js';
 import { syncPlaylist } from './playlists.js';
+import { armWaitLoop, waitLoopTargets } from './waitloop.js';
 
 export const cueRouter = Router();
 
@@ -108,6 +109,12 @@ async function runCue(id, def) {
     ? resolveTargets(def.performers ?? def.players)
       .filter((p) => livePerformerIds().includes(p))
     : livePerformerIds();
+  // Wait-loop ensembles among the named collections — their members get
+  // the loop_wait flag so each pass end re-arms for the next release.
+  const waitCols = Array.isArray(def.performers ?? def.players)
+    ? waitLoopTargets(def.performers ?? def.players)
+    : [];
+  const waitMembers = new Set(waitCols.flatMap((c) => c.members));
 
   // Playlist apply — push + reorder via syncPlaylist. An explicit target
   // list overrides the playlist's own members; empty falls back to them.
@@ -138,7 +145,11 @@ async function runCue(id, def) {
   }
   if (action === 'prepare') {
     await Promise.allSettled(targets.map((p) => probeClock(p)));
-    targets.forEach((p) => sendToPerformer(p, { type: 'command', cmd: 'prepare' }));
+    targets.forEach((p) => sendToPerformer(p, {
+      type: 'command',
+      cmd: 'prepare',
+      loop_wait: waitMembers.has(p),
+    }));
     return { delivered: targets.length, staged: true };
   }
   // perform / sync — synchronized release on one deadline in every
@@ -146,7 +157,11 @@ async function runCue(id, def) {
   // 'sync' prepares first.
   await Promise.allSettled(targets.map((p) => probeClock(p)));
   if (action === 'sync') {
-    targets.forEach((p) => sendToPerformer(p, { type: 'command', cmd: 'prepare' }));
+    targets.forEach((p) => sendToPerformer(p, {
+      type: 'command',
+      cmd: 'prepare',
+      loop_wait: waitMembers.has(p),
+    }));
     await new Promise((r) => setTimeout(r, 1500)); // let displays stage
   }
   const results = {};
@@ -160,7 +175,24 @@ async function runCue(id, def) {
     const at = deadlineFor(p, def.lead_ms);
     results[p] = at === null
       ? { released: false, reason: 'no clock sample' }
-      : { released: sendToPerformer(p, { type: 'command', cmd: 'perform', at_mono: at }) };
+      : { released: sendToPerformer(p, {
+          type: 'command',
+          cmd: 'perform',
+          at_mono: at,
+          loop_wait: waitMembers.has(p),
+        }) };
+  }
+  // Arm a wait-loop barrier for each wait-loop ensemble named in the
+  // targets — only members that actually released join the round.
+  for (const col of waitCols) {
+    const released = col.members.filter((m) => results[m]?.released);
+    if (released.length) {
+      armWaitLoop(col.id, released, {
+        lead_ms: def.lead_ms,
+        policy: def.policy,
+        min_ready: def.min_ready,
+      });
+    }
   }
   return { delivered: Object.values(results).filter((r) => r.released).length, results };
 }
