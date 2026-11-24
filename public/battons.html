@@ -54,6 +54,8 @@
   label { display: block; margin: 8px 0 2px; font-size: 12px;
           color: var(--dim); }
   .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
+  tbody tr { cursor: pointer; }
+  tr.sel td { background: #0c1930; }
   .row > div { min-width: 140px; }
   .picklist { max-height: 140px; overflow-y: auto; min-width: 170px;
               background: #060e1e; border: 1px solid var(--edge);
@@ -81,16 +83,35 @@
 <main>
   <h2>Hardware buttons <small style="color:var(--dim);font-weight:400">(Battons)</small></h2>
   <div id="pending" class="card" style="display:none"></div>
+  <div id="bSelBar" class="row" style="display:none;margin-bottom:8px">
+    <span id="bSelCount" class="dim"></span>
+    <button class="mini secondary" onclick="selBatRename()">Rename</button>
+    <button class="mini danger" onclick="selBatDelete()">Delete</button>
+    <button class="mini secondary" onclick="bSelClear()">Clear</button>
+  </div>
   <div class="card"><table>
-    <tr><th></th><th>Name</th><th>Inputs</th><th>Version</th><th>IP</th>
-        <th>Last seen</th><th></th></tr>
+    <tr><th><input type="checkbox" title="select all"
+      onchange="bSelAll(this.checked)"></th>
+      <th>Name</th><th>Inputs</th><th>Version</th><th>IP</th>
+        <th>Last seen</th></tr>
     <tbody id="brows"></tbody>
   </table></div>
 
   <h2>Automations — when this, then that</h2>
+  <div id="aSelBar" class="row" style="display:none;margin-bottom:8px">
+    <span id="aSelCount" class="dim"></span>
+    <button class="mini secondary" onclick="selAutoEdit()">Edit</button>
+    <button class="mini secondary" onclick="selAutoTest()">Test</button>
+    <button class="mini secondary" onclick="selAutoHook()">Copy URL</button>
+    <button class="mini" onclick="selAutoEnable(true)">Enable</button>
+    <button class="mini" onclick="selAutoEnable(false)">Disable</button>
+    <button class="mini danger" onclick="selAutoDelete()">Delete</button>
+    <button class="mini secondary" onclick="aSelClear()">Clear</button>
+  </div>
   <div class="card"><table>
-    <tr><th>Name</th><th>When</th><th>Then</th><th>Cooldown</th>
-        <th></th></tr>
+    <tr><th><input type="checkbox" title="select all"
+      onchange="aSelAll(this.checked)"></th>
+      <th>Name</th><th>When</th><th>Then</th><th>Cooldown</th></tr>
     <tbody id="arows"></tbody>
   </table></div>
 
@@ -239,10 +260,87 @@ async function deny(pid) {
   refresh();
 }
 
+// Select-then-act — row checks drive the top-edge bars (mobile: no
+// per-row button cram). Sets survive the refresh poll.
+const bSelSet = new Set(), aSelSet = new Set();
+function rowTap(ev, id, set) {
+  if (ev.target.closest("input,button,a,select,textarea,label")) return;
+  set.has(id) ? set.delete(id) : set.add(id);
+  renderBattons(); renderAutos();
+}
+function selBar(set, bar, count) {
+  $(bar).style.display = set.size ? "" : "none";
+  $(count).textContent = set.size + " selected";
+}
+function bSel(on, id) { on ? bSelSet.add(id) : bSelSet.delete(id);
+  selBar(bSelSet, "bSelBar", "bSelCount"); }
+function bSelAll(on) {
+  document.querySelectorAll("#brows .bsel").forEach(c => bSel(on, c.value));
+}
+function bSelClear() { bSelSet.clear(); renderBattons(); }
+function aSel(on, id) { on ? aSelSet.add(id) : aSelSet.delete(id);
+  selBar(aSelSet, "aSelBar", "aSelCount"); }
+function aSelAll(on) {
+  document.querySelectorAll("#arows .asel").forEach(c => aSel(on, c.value));
+}
+function aSelClear() { aSelSet.clear(); renderAutos(); }
+function oneOf(set, what) {
+  if (set.size !== 1) {
+    toast(`select exactly one ${what} (${set.size} selected)`);
+    return null;
+  }
+  return [...set][0];
+}
+function selBatRename() { const id = oneOf(bSelSet, "batton"); if (id) renameBatton(id); }
+async function selBatDelete() {
+  if (!bSelSet.size) return toast("select batton(s) first");
+  if (!confirm(`Remove ${bSelSet.size} batton(s)? They will need to re-pair.`)) return;
+  for (const id of bSelSet) {
+    await api(`/api/battons/${encodeURIComponent(id)}`, { method: "DELETE" });
+  }
+  bSelSet.clear(); refresh();
+}
+function selAutoEdit() { const id = oneOf(aSelSet, "automation"); if (id) editAutomation(id); }
+async function selAutoTest() {
+  if (!aSelSet.size) return toast("select automation(s) first");
+  for (const id of aSelSet) await testFire(id);
+}
+function selAutoHook() {
+  const id = oneOf(aSelSet, "automation");
+  if (!id) return;
+  const a = autos[id];
+  if (a?.when?.type !== "webhook") return toast("that automation is not a webhook");
+  copyHook(a.when.key);
+}
+async function selAutoEnable(on) {
+  if (!aSelSet.size) return toast("select automation(s) first");
+  for (const id of aSelSet) {
+    const a = autos[id];
+    if (!a) continue;
+    await api(`/api/automations/${encodeURIComponent(id)}`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...a, enabled: on }),
+    });
+  }
+  refresh();
+}
+async function selAutoDelete() {
+  if (!aSelSet.size) return toast("select automation(s) first");
+  if (!confirm(`Delete ${aSelSet.size} automation(s)?`)) return;
+  for (const id of aSelSet) {
+    await api(`/api/automations/${encodeURIComponent(id)}`, { method: "DELETE" });
+  }
+  aSelSet.clear(); refresh();
+}
+
 function renderBattons() {
   $("brows").innerHTML = battons.length ? battons.map(b => `
-    <tr>
-      <td><span class="dot ${b.online ? "on" : ""}"></span></td>
+    <tr class="${bSelSet.has(b.id) ? "sel" : ""}"
+        onclick="rowTap(event, '${esc(b.id)}', bSelSet)">
+      <td><input type="checkbox" class="bsel" value="${esc(b.id)}"
+        ${bSelSet.has(b.id) ? "checked" : ""}
+        onchange="bSel(this.checked, '${esc(b.id)}')">
+        <span class="dot ${b.online ? "on" : ""}"></span></td>
       <td>${esc(b.name)} <span class="dim mono">${esc(b.id)}</span></td>
       <td>${(b.inputs || []).map(i =>
         `<span class="chip" title="GPIO ${i.pin}, ${i.edge}">${esc(i.id)}</span>`).join("")}
@@ -250,13 +348,10 @@ function renderBattons() {
       <td class="dim">${esc(b.version || "—")}</td>
       <td class="dim mono">${esc(b.ip || "—")}</td>
       <td class="dim">${ago(b.last_seen)}</td>
-      <td style="white-space:nowrap">
-        <button onclick="renameBatton('${esc(b.id)}')">Rename</button>
-        <button class="danger" onclick="delBatton('${esc(b.id)}')" aria-label="delete">${ic("x")}</button>
-      </td>
     </tr>`).join("")
-  : `<tr><td colspan="7" class="dim">No Battons paired — open a Batton's
+  : `<tr><td colspan="6" class="dim">No Battons paired — open a Batton's
      web page, enter this server URL, and press Pair.</td></tr>`;
+  selBar(bSelSet, "bSelBar", "bSelCount");
 }
 
 async function renameBatton(id) {
@@ -269,11 +364,7 @@ async function renameBatton(id) {
   });
   refresh();
 }
-async function delBatton(id) {
-  if (!confirm("Remove this Batton? It will need to re-pair.")) return;
-  await api(`/api/battons/${encodeURIComponent(id)}`, { method: "DELETE" });
-  refresh();
-}
+
 
 // -- Automations -----------------------------------------------------------
 
@@ -305,20 +396,19 @@ function thenText(a) {
 function renderAutos() {
   const rows = Object.entries(autos);
   $("arows").innerHTML = rows.length ? rows.map(([id, a]) => `
-    <tr>
+    <tr class="${aSelSet.has(id) ? "sel" : ""}"
+        onclick="rowTap(event, '${esc(id)}', aSelSet)">
+      <td><input type="checkbox" class="asel" value="${esc(id)}"
+        ${aSelSet.has(id) ? "checked" : ""}
+        onchange="aSel(this.checked, '${esc(id)}')"></td>
       <td>${esc(a.name)}${a.enabled === false
         ? ' <span class="chip">disabled</span>' : ""}</td>
       <td>${whenText(a)}</td>
       <td>${thenText(a)}</td>
       <td class="dim">${a.cooldown_ms ? (a.cooldown_ms / 1000) + "s" : "—"}</td>
-      <td style="white-space:nowrap">
-        ${a.when?.type === "webhook" ? `<button onclick="copyHook('${esc(a.when.key)}')">URL</button>` : ""}
-        <button onclick="testFire('${esc(id)}')">Test</button>
-        <button onclick="editAutomation('${esc(id)}')">Edit</button>
-        <button class="danger" onclick="delAutomation('${esc(id)}')" aria-label="delete">${ic("x")}</button>
-      </td>
     </tr>`).join("")
   : `<tr><td colspan="5" class="dim">No automations yet — build one below.</td></tr>`;
+  selBar(aSelSet, "aSelBar", "aSelCount");
 }
 
 function copyHook(key) {
@@ -491,11 +581,7 @@ async function testFire(id) {
     { method: "POST" });
   toast(r.accepted === false ? `not fired: ${r.reason}` : `fired → ${r.delivered ?? 0} display(s)`);
 }
-async function delAutomation(id) {
-  if (!confirm("Delete this automation?")) return;
-  await api(`/api/automations/${encodeURIComponent(id)}`, { method: "DELETE" });
-  refresh();
-}
+
 
 whenTypeChanged(); actionChanged();
 refresh();

@@ -64,6 +64,9 @@
   button.act:hover { background: #2a4a7a; }
   button.act.danger { color: var(--err); }
   .editrow td { background: #0d1b33; }
+  tbody tr[data-id] { cursor: pointer; }
+  tr.sel td { background: #0d1b33; }
+  #rows .psel { vertical-align: middle; margin-right: 6px; }
   .row { display: flex; gap: 22px; align-items: center; flex-wrap: wrap; }
   .row select, .row input { background: #000; border: 1px solid var(--edge);
     color: var(--text); border-radius: 6px; padding: 5px 8px;
@@ -112,12 +115,24 @@
   <div id="displays">
     <div class="card">
       <h2>Displays</h2>
+      <div id="selBar" class="row" style="display:none;margin-bottom:8px">
+        <span id="selCount" class="dim"></span>
+        <button class="mini secondary" onclick="selPlaylist()">Playlist</button>
+        <button class="mini secondary" onclick="selRename()">Rename</button>
+        <button class="mini secondary" onclick="selCmd('restart')">Restart</button>
+        <button class="mini secondary" onclick="selCmd('stop')">Stop</button>
+        <button class="mini secondary" onclick="selCmd('restart_app')">App</button>
+        <button class="mini danger" onclick="selRemove()">Remove</button>
+        <button class="mini secondary" onclick="selClear()">Clear</button>
+      </div>
       <table class="rstack">
         <thead><tr>
-          <th></th><th>Display</th><th>Version</th><th>Last seen</th>
-          <th>Now showing</th><th>Free</th><th></th>
+          <th><input type="checkbox" title="select all"
+            onchange="pSelAll(this.checked)"></th>
+          <th>Display</th><th>Version</th><th>Last seen</th>
+          <th>Now showing</th><th>Free</th>
         </tr></thead>
-        <tbody id="rows"><tr><td colspan="7" class="dim">No displays registered — open the Pairing tab.</td></tr></tbody>
+        <tbody id="rows"><tr><td colspan="6" class="dim">No displays registered — open the Pairing tab.</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -237,7 +252,7 @@ async function refresh() {
 function render() {
   const tb = $("rows");
   if (!players.length) {
-    tb.innerHTML = `<tr><td colspan="7" class="dim">
+    tb.innerHTML = `<tr><td colspan="6" class="dim">
       No displays registered — open the Pairing tab.</td></tr>`;
     return;
   }
@@ -246,8 +261,12 @@ function render() {
     const dot = p.online ? ((st.prepared ?? st.armed) ? "prepared" : "on") : "";
     const labels = (p.labels || [])
       .map(l => `<span class="chip">${esc(l)}</span>`).join("");
-    return `<tr data-id="${esc(p.id)}">
-      <td class="cell-dot"><span class="dot ${dot}"></span></td>
+    return `<tr data-id="${esc(p.id)}" onclick="rowTap(event, ${jsArg(p.id)})"
+        class="${pSelSet.has(p.id) ? 'sel' : ''}">
+      <td class="cell-dot"><input type="checkbox" class="psel"
+        value="${esc(p.id)}" ${pSelSet.has(p.id) ? 'checked' : ''}
+        onchange="pSel(this.checked, ${jsArg(p.id)})">
+        <span class="dot ${dot}"></span></td>
       <td class="cell-name"><a class="name" href="/display.html?id=${encodeURIComponent(p.id)}"
           title="manage this display">${esc(p.name || p.id)}</a>${labels}
           ${(st.prepared ?? st.armed) ? '<span class="badge warn">READY</span>' : ""}
@@ -259,14 +278,6 @@ function render() {
       <td data-l="Now showing">${esc(st.current || (st.playing ? "(playing)" : "—"))}
           ${st.maintenance ? '<span class="badge warn">MENU</span>' : ""}</td>
       <td class="dim" data-l="Free">${st.free_gb != null ? esc(st.free_gb) + " GB" : "—"}</td>
-      <td class="cell-acts">
-        <button class="act" title="playlist" aria-label="playlist" onclick="togglePlaylist(${jsArg(p.id)}, this)">${ic("list")} Playlist</button>
-        <button class="act" title="restart content" aria-label="restart content" onclick="cmd(${jsArg(p.id)},'restart')">${ic("restart")} Restart</button>
-        <button class="act" title="stop to standby" aria-label="stop to standby" onclick="cmd(${jsArg(p.id)},'stop')">${ic("stop")} Stop</button>
-        <button class="act" title="reboot app" aria-label="reboot app" onclick="cmd(${jsArg(p.id)},'restart_app')">${ic("power")} App</button>
-        <button class="act" title="rename and labels" aria-label="rename and labels" onclick="editLabels(${jsArg(p.id)}, this)">${ic("edit")} Rename</button>
-        <button class="act danger" title="remove display" aria-label="remove display" onclick="removePlayer(${jsArg(p.id)})">${ic("x")} Remove</button>
-      </td>
     </tr>`;
   }).join("");
   // Re-anchor expanded rows (rename editor, playlist preview) — the
@@ -278,6 +289,10 @@ function render() {
     let at = anchor;
     for (const r of rows) { at.after(r); at = r; }
   }
+  // Prune selection of displays that disappeared; keep the bar honest.
+  const ids = new Set(players.map(p => p.id));
+  for (const id of [...pSelSet]) if (!ids.has(id)) pSelSet.delete(id);
+  updateSelBar();
 }
 
 // Expanded rows under fleet rows — survives the 3s refresh rebuild.
@@ -288,6 +303,56 @@ function addOpenRow(pid, tr) {
 function dropOpenRow(pid, tr) {
   const left = (openRows.get(pid) || []).filter(r => r !== tr);
   left.length ? openRows.set(pid, left) : openRows.delete(pid);
+}
+function anchorRow(pid) {
+  return document.querySelector(
+    `#rows tr[data-id="${CSS.escape(pid)}"]`);
+}
+
+// Fleet selection — model-backed so the 3s poll keeps it; selection
+// drives the top-edge action bar instead of per-row buttons.
+const pSelSet = new Set();
+function pSel(on, id) {
+  on ? pSelSet.add(id) : pSelSet.delete(id);
+  updateSelBar();
+}
+function pSelAll(on) {
+  document.querySelectorAll("#rows .psel").forEach(c => {
+    c.checked = on;
+    pSel(on, c.value);
+  });
+}
+function selClear() { pSelSet.clear(); render(); }
+function updateSelBar() {
+  $("selBar").style.display = pSelSet.size ? "" : "none";
+  $("selCount").textContent = pSelSet.size + " selected";
+}
+function rowTap(ev, id) {
+  if (ev.target.closest("input,button,a,select,textarea,label")) return;
+  pSelSet.has(id) ? pSelSet.delete(id) : pSelSet.add(id);
+  render();
+}
+function selOne() {
+  if (pSelSet.size !== 1) {
+    toast(`select exactly one display (${pSelSet.size} selected)`);
+    return null;
+  }
+  return [...pSelSet][0];
+}
+function selPlaylist() { const id = selOne(); if (id) togglePlaylist(id); }
+function selRename() { const id = selOne(); if (id) editLabels(id); }
+async function selCmd(c) {
+  if (!pSelSet.size) return toast("select display(s) first");
+  for (const id of pSelSet) await cmd(id, c);
+}
+async function selRemove() {
+  if (!pSelSet.size) return toast("select display(s) first");
+  if (!confirm(`Remove ${pSelSet.size} display(s) from the conductor?`)) return;
+  for (const id of pSelSet) {
+    await fetch(`/api/performers/${encodeURIComponent(id)}`, { method: "DELETE" });
+    pSelSet.delete(id);
+  }
+  refresh();
 }
 
 async function cmd(id, c) {
@@ -305,17 +370,20 @@ async function removePlayer(id) {
   refresh();
 }
 
-function editLabels(id, btn) {
-  const row = btn.closest("tr");
-  if (row.nextSibling?.classList?.contains("editrow")) {
-    dropOpenRow(id, row.nextSibling);
-    row.nextSibling.remove();
+function editLabels(id) {
+  const existing = (openRows.get(id) || [])
+    .find(r => r.classList.contains("editrow"));
+  if (existing) {
+    dropOpenRow(id, existing);
+    existing.remove();
     return;
   }
+  const row = anchorRow(id);
+  if (!row) return;
   const p = players.find(x => x.id === id) || {};
   const tr = document.createElement("tr");
   tr.className = "editrow";
-  tr.innerHTML = `<td colspan="7">Name:
+  tr.innerHTML = `<td colspan="6">Name:
     <input id="ne_${esc(id)}" value="${esc(p.name || "")}">
     Labels (comma-separated):
     <input id="le_${esc(id)}" value="${esc((p.labels || []).join(", "))}">
@@ -343,16 +411,19 @@ async function saveLabels(id) {
   refresh();
 }
 
-async function togglePlaylist(id, btn) {
-  const row = btn.closest("tr");
-  if (row.nextSibling?.classList?.contains("sublist")) {
-    dropOpenRow(id, row.nextSibling);
-    row.nextSibling.remove();
+async function togglePlaylist(id) {
+  const existing = (openRows.get(id) || [])
+    .find(r => r.classList.contains("sublist"));
+  if (existing) {
+    dropOpenRow(id, existing);
+    existing.remove();
     return;
   }
+  const row = anchorRow(id);
+  if (!row) return;
   const tr = document.createElement("tr");
   tr.className = "sublist";
-  tr.innerHTML = `<td colspan="7" class="dim">loading…</td>`;
+  tr.innerHTML = `<td colspan="6" class="dim">loading…</td>`;
   row.after(tr);
   addOpenRow(id, tr);
   const d = await api(`/api/performers/${encodeURIComponent(id)}/media`);

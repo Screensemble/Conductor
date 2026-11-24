@@ -94,7 +94,10 @@
   .pllist .pl:hover { background: #16294a; }
   .pllist .pl.on { background: #16294a; color: var(--cyan); }
   .plitem { display: flex; align-items: center; gap: 8px; padding: 6px 8px;
-            border-bottom: 1px solid var(--edge); font-size: 14px; }
+            border-bottom: 1px solid var(--edge); font-size: 14px;
+            cursor: pointer; }
+  .plitem.sel, tr.sel td { background: #0c1930; }
+  tbody tr[data-name] { cursor: pointer; }
   .plitem:last-child { border-bottom: 0; }
   .plitem .t { flex: 1; overflow: hidden; text-overflow: ellipsis;
                white-space: nowrap; }
@@ -126,6 +129,8 @@
         <b>Push selected →</b>
         <span id="pushTargets"></span>
         <button class="mini" id="pushBtn" onclick="pushSelected()">Push</button>
+        <button class="mini secondary" onclick="selFrame()">Frame</button>
+        <button class="mini danger" onclick="selDelLib()">Delete</button>
       </div>
       <label class="inline"><input type="checkbox" id="selAll"
         onchange="toggleSelAll(this.checked)"> all</label>
@@ -228,10 +233,12 @@ function renderLib() {
   const libSel = new Set(
     [...document.querySelectorAll('.libsel:checked')].map(c => c.value));
   $('libList').innerHTML = '<table class="rstack"><thead><tr><th></th><th></th>' +
-    '<th>Name</th><th>Kind</th><th class="num">Size</th><th class="num">Sec</th><th></th>' +
+    '<th>Name</th><th>Kind</th><th class="num">Size</th><th class="num">Sec</th>' +
     '</tr></thead><tbody>' +
     libItems.map(i =>
-      `<tr><td><input type="checkbox" class="libsel" value="${escH(i.name)}"` +
+      `<tr data-name="${escH(i.name)}"` +
+      `${libSel.has(i.name) ? ' class="sel"' : ''} onclick="rowTap(event, ${jsArg(i.name)})"><td>` +
+      `<input type="checkbox" class="libsel" value="${escH(i.name)}"` +
       `${libSel.has(i.name) ? ' checked' : ''}></td>` +
       `<td>${thumbHtml(i)}</td><td class="cell-name"><b>${escH(i.name)}</b></td>` +
       `<td class="muted" data-l="Kind">${escH(i.kind)}</td>` +
@@ -244,26 +251,34 @@ function renderLib() {
           `and playlist sync (empty = 10)" ` +
           `onchange="setLibDuration(${jsArg(i.name)}, this.value, this)">`
         : '—') +
-      `</td><td class="num cell-acts">` +
-      (i.kind === 'video'
-        ? `<button class="mini" title="extract a still frame" ` +
-          `onclick="frameRow(this, ${jsArg(i.name)})">frame</button> ` : '') +
-      `<button class="mini danger" ` +
-      `onclick="delLib(${jsArg(i.name)})" aria-label="delete">${ic("x")} Delete</button></td></tr>`
+      `</td></tr>`
     ).join('') + '</tbody></table>';
+  // Re-anchor the open frame picker — the poll rebuild would otherwise
+  // destroy it mid-use.
+  if (openFrameTr) {
+    const anchor = document.querySelector(
+      `#libList tr[data-name="${CSS.escape(openFrameTr.dataset.for)}"]`);
+    if (anchor) anchor.after(openFrameTr);
+    else openFrameTr = null;
+  }
 }
 
 // Frozen-frame picker: expand a row under the video with a timestamp
 // field + live preview; Save stores it as a library image that pushes
-// like any other asset.
-function frameRow(btn, name) {
-  const tr = btn.closest('tr');
-  if (tr.nextSibling && tr.nextSibling.className === 'framerow') {
-    tr.nextSibling.remove();
+// like any other asset. The detached node survives the 15s poll.
+let openFrameTr = null;
+function frameRow(name) {
+  if (openFrameTr && openFrameTr.dataset.for === name) {
+    openFrameTr.remove(); openFrameTr = null;
     return;
   }
+  openFrameTr?.remove();
+  const anchor = document.querySelector(
+    `#libList tr[data-name="${CSS.escape(name)}"]`);
+  if (!anchor) return;
   const row = document.createElement('tr');
   row.className = 'framerow';
+  row.dataset.for = name;
   row.innerHTML = `<td colspan="6">
     <div class="framepick">
       <label>t = <input type="number" class="framet" min="0" step="0.5"
@@ -273,7 +288,8 @@ function frameRow(btn, name) {
       <span class="muted">becomes a still image in the library</span>
       <div class="frameprev"></div>
     </div></td>`;
-  tr.after(row);
+  anchor.after(row);
+  openFrameTr = row;
 }
 
 async function framePreview(btn, name) {
@@ -313,6 +329,15 @@ function renderTargets() {
 
 function toggleSelAll(on) {
   document.querySelectorAll('.libsel').forEach(c => c.checked = on);
+}
+
+// Tap anywhere on a row toggles it (except its own inputs/links) —
+// selection drives the top-edge action bar, not per-row buttons.
+function rowTap(ev, name) {
+  if (ev.target.closest('input,button,a,select,textarea,label')) return;
+  const cb = ev.currentTarget.querySelector('.libsel');
+  if (!cb) return;
+  cb.checked = !cb.checked;
 }
 
 function fmtBytes(b) {
@@ -383,6 +408,35 @@ async function delLib(name) {
   refresh();
 }
 
+// Select-then-act helpers — row checks drive the top-edge buttons.
+function libSelOne() {
+  const sel = [...document.querySelectorAll('.libsel:checked')]
+    .map(c => c.value);
+  if (sel.length !== 1) {
+    toast(`select exactly one item (${sel.length} selected)`);
+    return null;
+  }
+  return sel[0];
+}
+function selFrame() {
+  const n = libSelOne();
+  if (!n) return;
+  const it = libItems.find(x => x.name === n);
+  if (it?.kind !== 'video') return toast('frames come from videos');
+  frameRow(n);
+}
+async function selDelLib() {
+  const sel = [...document.querySelectorAll('.libsel:checked')]
+    .map(c => c.value);
+  if (!sel.length) return toast('select item(s) first');
+  if (!confirm(`Delete ${sel.length} item(s) from the library? ` +
+      'Displays keep their copies.')) return;
+  for (const n of sel) {
+    await fetch('/api/library/' + encodeURIComponent(n), {method: 'DELETE'});
+  }
+  refresh();
+}
+
 // Per-asset default duration — travels with pushes and playlist syncs,
 // and writes through to online displays immediately.
 async function setLibDuration(name, val, input) {
@@ -434,21 +488,31 @@ function renderPlEditor() {
   $('plEditor').hidden = !selPl;
   $('plHint').hidden = !!selPl;
   if (!selPl) return;
+  // Preserve item-check selections across the refresh rebuild.
+  const plSel = new Set(
+    [...document.querySelectorAll('.plsel:checked')].map(c => c.value));
   const addSel = $('plAdd').value;
   $('plAdd').innerHTML = libItems.map(i =>
     `<option value="${escH(i.name)}">${escH(i.name)}</option>`).join('');
   if (addSel) $('plAdd').value = addSel;
-  $('plItems').innerHTML = plItems.length
-    ? plItems.map((n, i) => {
-        const it = libItems.find(x => x.name === n);
-        return `<div class="plitem"><span class="k">${i + 1}</span>` +
-          `<span class="t">${escH(n)}</span>` +
-          `<span class="k">${escH(it ? it.kind : 'missing')}</span>` +
-          `<button class="mini secondary" onclick="plMove(${i},-1)">↑</button>` +
-          `<button class="mini secondary" onclick="plMove(${i},1)">↓</button>` +
-          `<button class="mini danger" onclick="plDel(${i})" aria-label="delete playlist">${ic("x")}</button></div>`;
-      }).join('')
-    : '<div class="muted" style="padding:6px">no items — add from the library</div>';
+  $('plItems').innerHTML =
+    (plItems.length ? `<div class="row" style="margin-bottom:6px">` +
+      `<button class="mini secondary" onclick="plSelMove(-1)">↑ Up</button>` +
+      `<button class="mini secondary" onclick="plSelMove(1)">↓ Down</button>` +
+      `<button class="mini danger" onclick="plSelDel()">Remove</button>` +
+      `</div>` : '') +
+    (plItems.length
+      ? plItems.map((n, i) => {
+          const it = libItems.find(x => x.name === n);
+          return `<div class="plitem${plSel.has(n) ? ' sel' : ''}"` +
+            ` onclick="plRowTap(event, ${jsArg(n)})">` +
+            `<input type="checkbox" class="plsel" value="${escH(n)}"` +
+            `${plSel.has(n) ? ' checked' : ''}>` +
+            `<span class="k">${i + 1}</span>` +
+            `<span class="t">${escH(n)}</span>` +
+            `<span class="k">${escH(it ? it.kind : 'missing')}</span></div>`;
+        }).join('')
+      : '<div class="muted" style="padding:6px">no items — add from the library</div>');
   $('plPlayers').innerHTML = '<b>Displays:</b>' + (
     players.length
       ? players.map(p =>
@@ -473,6 +537,31 @@ function plMove(i, d) {
   renderPlEditor();
 }
 function plDel(i) { plItems.splice(i, 1); renderPlEditor(); }
+
+// Playlist items use checkboxes + a top bar like the other lists —
+// selection is name-keyed so it stays sane across reorders.
+function plRowTap(ev, name) {
+  if (ev.target.closest('input,button,a,select,textarea,label')) return;
+  const cb = ev.currentTarget.querySelector('.plsel');
+  if (!cb) return;
+  cb.checked = !cb.checked;
+  ev.currentTarget.classList.toggle('sel', cb.checked);
+}
+function plSelNames() {
+  return [...document.querySelectorAll('.plsel:checked')].map(c => c.value);
+}
+function plSelMove(d) {
+  const sel = plSelNames();
+  if (sel.length !== 1)
+    return toast(`select exactly one item (${sel.length} selected)`);
+  plMove(plItems.indexOf(sel[0]), d);
+}
+function plSelDel() {
+  const sel = new Set(plSelNames());
+  if (!sel.size) return toast('select item(s) first');
+  plItems = plItems.filter(n => !sel.has(n));
+  renderPlEditor();
+}
 
 function collectPl() {
   return {
