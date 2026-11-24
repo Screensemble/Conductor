@@ -63,7 +63,9 @@
   input, select { background: #000; border: 1px solid var(--edge); color: var(--text);
                   border-radius: 6px; padding: 7px 9px; font-size: 14px; }
   input:focus, select:focus { outline: none; border-color: var(--cyan); }
-  input[type=checkbox] { width: auto; }
+  input[type=checkbox] { width: 15px; height: 15px; padding: 0;
+                         accent-color: var(--cyan); vertical-align: middle;
+                         cursor: pointer; }
   input.dur { width: 56px; padding: 3px 6px; font-size: 12px; }
   .muted { color: var(--dim); font-size: 13px; }
   .panel { background: var(--card); border: 1px solid var(--edge);

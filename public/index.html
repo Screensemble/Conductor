@@ -63,6 +63,10 @@
                font-size: 12px; cursor: pointer; }
   button.act:hover { background: #2a4a7a; }
   button.act.danger { color: var(--err); }
+  #selBar { gap: 8px; padding: 10px 16px; background: #0d1b33;
+            border-bottom: 1px solid var(--edge); }
+  input[type=checkbox] { accent-color: var(--cyan); width: 15px; height: 15px;
+                         vertical-align: middle; cursor: pointer; }
   .editrow td { background: #0d1b33; }
   tbody tr[data-id] { cursor: pointer; }
   tr.sel td { background: #0d1b33; }
@@ -117,13 +121,13 @@
       <h2>Displays</h2>
       <div id="selBar" class="row" style="display:none;margin-bottom:8px">
         <span id="selCount" class="dim"></span>
-        <button class="mini secondary" onclick="selPlaylist()">Playlist</button>
-        <button class="mini secondary" onclick="selRename()">Rename</button>
-        <button class="mini secondary" onclick="selCmd('restart')">Restart</button>
-        <button class="mini secondary" onclick="selCmd('stop')">Stop</button>
-        <button class="mini secondary" onclick="selCmd('restart_app')">App</button>
-        <button class="mini danger" onclick="selRemove()">Remove</button>
-        <button class="mini secondary" onclick="selClear()">Clear</button>
+        <button class="act" onclick="selPlaylist()">Playlist</button>
+        <button class="act" onclick="selRename()">Rename</button>
+        <button class="act" onclick="selCmd('restart')">Restart</button>
+        <button class="act" onclick="selCmd('stop')">Stop</button>
+        <button class="act" onclick="selCmd('restart_app')">App</button>
+        <button class="act danger" onclick="selRemove()">Remove</button>
+        <button class="act" onclick="selClear()">Clear</button>
       </div>
       <table class="rstack">
         <thead><tr>

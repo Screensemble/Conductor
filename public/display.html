@@ -71,6 +71,8 @@
                   border-radius: 6px; padding: 7px 9px; font-size: 14px; }
   input:focus, select:focus { outline: none; border-color: var(--cyan); }
   input[type=color] { padding: 2px; height: 34px; width: 100%; }
+  input[type=checkbox] { accent-color: var(--cyan); width: 15px; height: 15px;
+                         padding: 0; vertical-align: middle; cursor: pointer; }
   input.dur { padding: 3px 6px; font-size: 12px; width: 64px; }
   .muted { color: var(--dim); font-size: 13px; }
   .panel { background: var(--card); border: 1px solid var(--edge);
@@ -146,7 +148,7 @@
   <section id="page-playlist" hidden>
     <div class="row" style="margin-bottom:14px">
       <label style="margin:0"><input type="checkbox" id="shuffleBox"
-        style="width:auto" onchange="setShuffle(this.checked)"> Shuffle play order</label>
+        onchange="setShuffle(this.checked)"> Shuffle play order</label>
       <button class="secondary" onclick="cmd('restart')">Restart content</button>
       <button onclick="showTab('add')">+ Add media</button>
     </div>
@@ -557,7 +559,7 @@ function editHtml(i) {
   const s = i.schedule || {};
   const dayBoxes = DAYS.map((d, di) =>
     `<label style="margin:0"><input type="checkbox" class="sday" value="${di}" ` +
-    `${(s.days || []).includes(di) ? 'checked' : ''} style="width:auto"> ${d}</label>`
+    `${(s.days || []).includes(di) ? 'checked' : ''}> ${d}</label>`
   ).join(' ');
   return `<h2 style="margin-top:0">Edit — ${escH(i.name)}</h2>` +
     `<div class="row">` +
