@@ -27,6 +27,7 @@
   nav .tab.on { color: var(--cyan); border-bottom: 2px solid var(--cyan); }
   main { max-width: 1080px; margin: 0 auto; padding: 20px 16px 60px; }
   h2 { margin: 26px 0 10px; font-size: 15px; color: var(--text); }
+  section + section { margin-top: 32px; }
   h2 small { color: var(--dim); font-weight: 400; font-size: 12px; margin-left: 8px; }
   h2:first-child { margin-top: 0; }
   table { width: 100%; border-collapse: collapse; font-size: 14px;
@@ -234,8 +235,9 @@ function renderLib() {
       (i.kind === 'image'
         ? `<input class="dur" type="number" min="1" ` +
           `value="${i.duration ?? ''}" placeholder="10" ` +
-          `title="default seconds when pushed (empty = 10)" ` +
-          `onchange="setLibDuration(${jsArg(i.name)}, this.value)">`
+          `title="default seconds on every display — re-applied on push ` +
+          `and playlist sync (empty = 10)" ` +
+          `onchange="setLibDuration(${jsArg(i.name)}, this.value, this)">`
         : '—') +
       `</td><td class="num cell-acts">` +
       (i.kind === 'video'
@@ -372,13 +374,18 @@ async function delLib(name) {
   refresh();
 }
 
-// Per-asset default duration — travels with pushes and playlist syncs.
-async function setLibDuration(name, val) {
+// Per-asset default duration — travels with pushes and playlist syncs,
+// and writes through to online displays immediately.
+async function setLibDuration(name, val, input) {
   const secs = val === '' ? null : Math.max(1, Math.round(+val || 0));
-  await fetch('/api/library/' + encodeURIComponent(name), {
+  const r = await fetch('/api/library/' + encodeURIComponent(name), {
     method: 'PUT', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({duration: secs}),
   });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { toast(j.error || 'Could not save'); return; }
+  toast(secs ? `Saved — ${secs}s on this item everywhere`
+             : 'Default cleared on displays');
 }
 
 // ---------- playlists ----------

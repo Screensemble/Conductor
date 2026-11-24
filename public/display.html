@@ -466,25 +466,37 @@ function updateBulkBar() {
 }
 async function bulkEnable(on) {
   if (!selSet.size) return;
-  mediaDirtyUntil = Date.now() + 4000 + selSet.size * 300;
+  const total = selSet.size;
+  mediaDirtyUntil = Date.now() + 4000 + total * 300;
+  let ok = 0;
   for (const n of selSet) {
-    await api('/media/toggle', {
+    const r = await api('/media/toggle', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({name: n, enabled: on}),
-    });
-    const i = byName(n); if (i) i.enabled = on;
+    }).catch(() => ({error: 'unreachable'}));
+    if (r && !r.error) {
+      ok++;
+      const i = byName(n); if (i) i.enabled = on;
+    }
   }
-  selClear(); toast(on ? 'Enabled selected' : 'Disabled selected');
+  selClear();
+  const verb = on ? 'Enabled' : 'Disabled';
+  toast(ok === total ? `${verb} ${ok}` : `${verb} ${ok} of ${total}`);
 }
 async function bulkDelete() {
   if (!selSet.size) return;
-  if (!confirm('Delete ' + selSet.size + ' selected item(s)?')) return;
+  const total = selSet.size;
+  if (!confirm('Delete ' + total + ' selected item(s)?')) return;
+  let ok = 0;
   for (const n of selSet) {
-    await api('/media/delete', {method: 'POST',
+    const r = await api('/media/delete', {method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({name: n})});
+      body: JSON.stringify({name: n})}).catch(() => ({error: 'unreachable'}));
+    if (r && !r.error) ok++;
   }
-  selSet.clear(); toast('Deleted selected'); refresh();
+  selSet.clear();
+  toast(ok === total ? `Deleted ${ok}` : `Deleted ${ok} of ${total}`);
+  refresh();
 }
 
 function renderMedia() {

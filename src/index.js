@@ -556,15 +556,28 @@ app.post('/api/library', async (req, res) => {
 });
 
 // Per-asset metadata — the default image duration travels with the file
-// on pushes and playlist syncs.
-app.put('/api/library/:name', (req, res) => {
+// on pushes and playlist syncs. Edits also write straight through to
+// online displays (seconds:0 pops the display's stored value) so
+// clearing the field doesn't leave a stale default behind.
+app.put('/api/library/:name', async (req, res) => {
   const name = validName(req.params.name);
   if (!hasItem(name)) return res.status(404).json({ error: 'not found' });
   const d = req.body?.duration;
   if (d != null && (!Number.isFinite(+d) || +d <= 0 || +d > 86400)) {
-    return res.status(400).json({ error: 'duration must be 0-86400s' });
+    return res.status(400).json({ error: 'duration must be 1-86400 seconds' });
   }
-  res.json({ ok: true, meta: setItemMeta(name, { duration: d == null ? null : +d }) });
+  const meta = setItemMeta(name, { duration: d == null ? null : +d });
+  let applied = 0;
+  for (const pid of livePerformerIds()) {
+    try {
+      await requestFromPerformer(String(pid), {
+        type: 'media_op', op: 'duration', name,
+        seconds: meta.duration || 0,
+      }, 5000);
+      applied++;
+    } catch { /* offline — push/sync carries it later */ }
+  }
+  res.json({ ok: true, meta, applied });
 });
 
 app.delete('/api/library/:name', (req, res) => {
