@@ -251,7 +251,9 @@ function render() {
       <td class="cell-name"><a class="name" href="/display.html?id=${encodeURIComponent(p.id)}"
           title="manage this display">${esc(p.name || p.id)}</a>${labels}
           ${(st.prepared ?? st.armed) ? '<span class="badge warn">READY</span>' : ""}
-          ${p.name ? `<div class="dim mono" style="font-size:11px">${esc(p.id)}</div>` : ""}</td>
+          ${p.name
+            ? `<div class="dim mono" style="font-size:11px">${esc(p.id)}</div>`
+            : `<div class="dim" style="font-size:11px">unnamed — Rename to set</div>`}</td>
       <td class="dim" data-l="Version">${esc(p.client_version || "—")}</td>
       <td class="dim" data-l="Last seen">${ago(p.last_seen)}</td>
       <td data-l="Now showing">${esc(st.current || (st.playing ? "(playing)" : "—"))}

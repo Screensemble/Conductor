@@ -8,7 +8,7 @@ import {
 import { dirname, join } from 'node:path';
 import { requestFromPerformer } from './performers.js';
 import { pushLibraryItem } from './uploads.js';
-import { hasItem, itemPath } from './library.js';
+import { hasItem, itemMeta, itemPath } from './library.js';
 
 // Shared playlists — named ordered lists of library items assigned to
 // displays. Syncing a playlist pushes any files the display is missing
@@ -81,6 +81,16 @@ export async function syncPlaylist(name, { prune = false, targets = null } = {})
         op: 'order',
         order: pl.items,
       });
+      // Carry per-asset default durations the same way — the state entry
+      // lands even before its file does.
+      for (const n of pl.items) {
+        const dur = itemMeta(n).duration;
+        if (dur) {
+          await requestFromPerformer(pid, {
+            type: 'media_op', op: 'duration', name: n, seconds: dur,
+          });
+        }
+      }
       if (prune) {
         for (const i of items) {
           if (!pl.items.includes(i.name) && !i.remote) {

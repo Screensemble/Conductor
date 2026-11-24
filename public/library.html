@@ -63,6 +63,7 @@
                   border-radius: 6px; padding: 7px 9px; font-size: 14px; }
   input:focus, select:focus { outline: none; border-color: var(--cyan); }
   input[type=checkbox] { width: auto; }
+  input.dur { width: 56px; padding: 3px 6px; font-size: 12px; }
   .muted { color: var(--dim); font-size: 13px; }
   .panel { background: var(--card); border: 1px solid var(--edge);
            border-radius: 8px; padding: 16px; margin-bottom: 16px; }
@@ -81,6 +82,10 @@
   .backlink { color: var(--dim); font-size: 13px; text-decoration: none; }
   .backlink:hover { color: var(--cyan); }
   .plwrap { display: grid; grid-template-columns: 220px 1fr; gap: 16px; }
+  @media (max-width: 640px) {
+    .plwrap { grid-template-columns: 1fr; }
+    #pushBtn { flex: 1; }
+  }
   .pllist { background: var(--card); border: 1px solid var(--edge);
             border-radius: 8px; padding: 10px; }
   .pllist .pl { padding: 8px 10px; border-radius: 6px; cursor: pointer;
@@ -119,7 +124,7 @@
       <div class="row">
         <b>Push selected →</b>
         <span id="pushTargets"></span>
-        <button class="mini" onclick="pushSelected()">Push</button>
+        <button class="mini" id="pushBtn" onclick="pushSelected()">Push</button>
       </div>
       <label class="inline"><input type="checkbox" id="selAll"
         onchange="toggleSelAll(this.checked)"> all</label>
@@ -218,13 +223,21 @@ function renderLib() {
     return;
   }
   $('libList').innerHTML = '<table class="rstack"><thead><tr><th></th><th></th>' +
-    '<th>Name</th><th>Kind</th><th class="num">Size</th><th></th></tr></thead><tbody>' +
+    '<th>Name</th><th>Kind</th><th class="num">Size</th><th class="num">Sec</th><th></th>' +
+    '</tr></thead><tbody>' +
     libItems.map(i =>
       `<tr><td><input type="checkbox" class="libsel" value="${escH(i.name)}"></td>` +
       `<td>${thumbHtml(i)}</td><td class="cell-name"><b>${escH(i.name)}</b></td>` +
       `<td class="muted" data-l="Kind">${escH(i.kind)}</td>` +
       `<td class="num" data-l="Size">${fmtSize(i.size)}</td>` +
-      `<td class="num cell-acts">` +
+      `<td class="num" data-l="Sec">` +
+      (i.kind === 'image'
+        ? `<input class="dur" type="number" min="1" ` +
+          `value="${i.duration ?? ''}" placeholder="10" ` +
+          `title="default seconds when pushed (empty = 10)" ` +
+          `onchange="setLibDuration(${jsArg(i.name)}, this.value)">`
+        : '—') +
+      `</td><td class="num cell-acts">` +
       (i.kind === 'video'
         ? `<button class="mini" title="extract a still frame" ` +
           `onclick="frameRow(this, ${jsArg(i.name)})">frame</button> ` : '') +
@@ -357,6 +370,15 @@ async function delLib(name) {
       'Displays keep their copies.')) return;
   await fetch('/api/library/' + encodeURIComponent(name), {method: 'DELETE'});
   refresh();
+}
+
+// Per-asset default duration — travels with pushes and playlist syncs.
+async function setLibDuration(name, val) {
+  const secs = val === '' ? null : Math.max(1, Math.round(+val || 0));
+  await fetch('/api/library/' + encodeURIComponent(name), {
+    method: 'PUT', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({duration: secs}),
+  });
 }
 
 // ---------- playlists ----------

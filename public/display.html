@@ -150,6 +150,13 @@
     </div>
 
     <h2>Active items <small>play in order — drag to reorder</small></h2>
+    <div id="bulkBar" class="row" style="display:none;margin-bottom:8px">
+      <span id="bulkCount" class="muted"></span>
+      <button class="mini" onclick="bulkEnable(true)">Enable</button>
+      <button class="mini" onclick="bulkEnable(false)">Disable</button>
+      <button class="mini danger" onclick="bulkDelete()">Delete</button>
+      <button class="mini secondary" onclick="selClear()">Clear</button>
+    </div>
     <div id="activeList"><div class="empty">loading…</div></div>
 
     <h2>Inactive items <small>kept on the display but skipped</small></h2>
@@ -256,6 +263,11 @@
         <dt>Now showing</dt><dd id="sysCurrent">—</dd>
         <dt>Playlist items</dt><dd id="sysMedia">—</dd>
         <dt>Free storage</dt><dd id="sysFree">—</dd>
+        <dt>IP address</dt><dd id="sysIp">—</dd>
+        <dt>MAC</dt><dd id="sysMac">—</dd>
+        <dt>Resolution</dt><dd id="sysRes">—</dd>
+        <dt>Kodi</dt><dd id="sysKodi">—</dd>
+        <dt>Uptime</dt><dd id="sysUptime">—</dd>
         <dt>Client version</dt><dd id="sysVer">—</dd>
       </dl>
       <p class="muted" id="playingInfo"></p>
@@ -338,6 +350,11 @@ async function refresh() {
     $('sysCurrent').textContent = s.current || '—';
     $('sysMedia').textContent = (s.items || 0) + ' item(s)';
     $('sysFree').textContent = s.free_gb != null ? s.free_gb + ' GB' : '—';
+    $('sysIp').textContent = s.ip || '—';
+    $('sysMac').textContent = s.mac || '—';
+    $('sysRes').textContent = s.resolution || '—';
+    $('sysKodi').textContent = s.kodi || '—';
+    $('sysUptime').textContent = s.uptime || '—';
     $('rmState').textContent = state + (s.paused ? ' (paused)' : '');
     $('rmCurrent').textContent = s.current || (s.maintenance ? 'Kodi UI' : 'standby');
     $('rmPause').style.opacity = s.playing ? 1 : 0.4;
@@ -400,7 +417,9 @@ function rowHtml(i, draggable) {
   const editRow = editName === i.name ? `<tr class="editrow"><td colspan="7">${editHtml(i)}</td></tr>` : '';
   return `<tr ${draggable ? 'draggable="true"' : ''} data-name="${escH(i.name)}"
       class="${i.enabled ? '' : 'inactive-row'}">` +
-    `<td class="handle">${draggable ? '⋮⋮' : ''}</td>` +
+    `<td class="handle"><input type="checkbox" class="itemsel" ` +
+      `value="${escH(i.name)}" ${selSet.has(i.name) ? 'checked' : ''} ` +
+      `onchange="onItemSel(this)">${draggable ? ' ⋮⋮' : ''}</td>` +
     `<td>${thumbHtml(i)}</td>` +
     `<td class="cell-name"><b>${escH(i.name)}</b>${badges}` +
     `<div class="muted" style="font-size:12px">${escH(i.kind)}</div></td>` +
@@ -413,19 +432,67 @@ function rowHtml(i, draggable) {
     `<button class="mini secondary" title="edit" aria-label="edit" onclick="toggleEdit(${n})">${ic("edit")} Edit</button> ` +
     `<button class="mini secondary" title="move up" onclick="moveItem(${n},-1)">↑ Up</button> ` +
     `<button class="mini secondary" title="move down" onclick="moveItem(${n},1)">↓ Down</button> ` +
-    `<button class="mini danger" title="delete" aria-label="delete" onclick="delItem(${n})">${ic("x")} Remove</button></td></tr>` +
+    `<button class="mini danger" title="delete" aria-label="delete" onclick="delItem(${n})">${ic("x")} Delete</button></td></tr>` +
     editRow;
 }
 
 function tableHtml(items, draggable) {
-  return '<table class="rstack"><thead><tr><th></th><th></th><th>Name</th><th class="num">Size</th>' +
+  return '<table class="rstack"><thead><tr>' +
+    '<th><input type="checkbox" title="select all" onclick="selAllIn(this)"></th>' +
+    '<th></th><th>Name</th><th class="num">Size</th>' +
     '<th class="num">Sec</th><th>On</th><th></th></tr></thead><tbody>' +
     items.map(i => rowHtml(i, draggable)).join('') + '</tbody></table>';
+}
+
+// Bulk selection — checkboxes live on rows; selSet survives refreshes so
+// a poll doesn't drop a selection mid-pick.
+const selSet = new Set();
+function onItemSel(cb) {
+  cb.checked ? selSet.add(cb.value) : selSet.delete(cb.value);
+  updateBulkBar();
+}
+function selAllIn(cb) {
+  const on = cb.checked;
+  cb.closest('table').querySelectorAll('.itemsel').forEach(c => {
+    c.checked = on;
+    on ? selSet.add(c.value) : selSet.delete(c.value);
+  });
+  updateBulkBar();
+}
+function selClear() { selSet.clear(); renderMedia(); }
+function updateBulkBar() {
+  $('bulkBar').style.display = selSet.size ? '' : 'none';
+  $('bulkCount').textContent = selSet.size + ' selected';
+}
+async function bulkEnable(on) {
+  if (!selSet.size) return;
+  mediaDirtyUntil = Date.now() + 4000 + selSet.size * 300;
+  for (const n of selSet) {
+    await api('/media/toggle', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name: n, enabled: on}),
+    });
+    const i = byName(n); if (i) i.enabled = on;
+  }
+  selClear(); toast(on ? 'Enabled selected' : 'Disabled selected');
+}
+async function bulkDelete() {
+  if (!selSet.size) return;
+  if (!confirm('Delete ' + selSet.size + ' selected item(s)?')) return;
+  for (const n of selSet) {
+    await api('/media/delete', {method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name: n})});
+  }
+  selSet.clear(); toast('Deleted selected'); refresh();
 }
 
 function renderMedia() {
   const active = mediaItems.filter(i => i.enabled);
   const inactive = mediaItems.filter(i => !i.enabled);
+  const names = new Set(mediaItems.map(i => i.name));
+  for (const n of selSet) if (!names.has(n)) selSet.delete(n);
+  updateBulkBar();
   $('activeList').innerHTML = active.length
     ? tableHtml(active, true)
     : '<div class="empty">no active items — upload media or add a URL</div>';

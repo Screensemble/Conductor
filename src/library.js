@@ -31,6 +31,37 @@ const VIDEO_EXTS = new Set([
   '.mp4', '.mkv', '.avi', '.mov', '.m4v', '.webm', '.mpg', '.mpeg',
 ]);
 
+// Per-asset metadata — currently just the default image duration. Kept
+// beside the files so pushes and playlist syncs carry it to displays.
+const META_FILE = join(process.cwd(), 'data', 'library-meta.json');
+let META = {};
+try {
+  META = JSON.parse(readFileSync(META_FILE, 'utf8')) || {};
+} catch { META = {}; }
+
+function saveMeta() {
+  mkdirSync(join(META_FILE, '..'), { recursive: true });
+  const tmp = META_FILE + '.tmp';
+  writeFileSync(tmp, JSON.stringify(META));
+  renameSync(tmp, META_FILE);
+}
+
+export function itemMeta(name) {
+  return META[cleanName(name)] || {};
+}
+
+export function setItemMeta(name, patch) {
+  const key = cleanName(name);
+  const next = { ...(META[key] || {}), ...patch };
+  for (const k of Object.keys(next)) {
+    if (next[k] == null) delete next[k];
+  }
+  if (Object.keys(next).length) META[key] = next;
+  else delete META[key];
+  saveMeta();
+  return next;
+}
+
 export function cleanName(name) {
   return basename(String(name || '')).trim();
 }
@@ -59,7 +90,10 @@ export function listItems() {
         : null;
     if (!kind) continue;
     const st = statSync(join(DIR, name));
-    items.push({ name, kind, size: st.size, mtime: st.mtimeMs });
+    items.push({
+      name, kind, size: st.size, mtime: st.mtimeMs,
+      duration: itemMeta(name).duration ?? null,
+    });
   }
   return items.sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -137,6 +171,10 @@ export function deleteItem(name) {
   const p = itemPath(name);
   if (existsSync(p)) unlinkSync(p);
   HASHES.delete(cleanName(name));
+  if (META[cleanName(name)]) {
+    delete META[cleanName(name)];
+    saveMeta();
+  }
 }
 
 // Content hashes for pull verification — cached by mtime so a big file

@@ -48,11 +48,13 @@ import {
 import {
   deleteItem,
   hasItem,
+  itemMeta,
   itemPath,
   itemSha256,
   listItems,
   saveStream,
   serveItem,
+  setItemMeta,
   validName,
 } from './library.js';
 import {
@@ -553,6 +555,18 @@ app.post('/api/library', async (req, res) => {
   if (got) res.status(201).json({ ok: true, name: got.name });
 });
 
+// Per-asset metadata — the default image duration travels with the file
+// on pushes and playlist syncs.
+app.put('/api/library/:name', (req, res) => {
+  const name = validName(req.params.name);
+  if (!hasItem(name)) return res.status(404).json({ error: 'not found' });
+  const d = req.body?.duration;
+  if (d != null && (!Number.isFinite(+d) || +d <= 0 || +d > 86400)) {
+    return res.status(400).json({ error: 'duration must be 0-86400s' });
+  }
+  res.json({ ok: true, meta: setItemMeta(name, { duration: d == null ? null : +d }) });
+});
+
 app.delete('/api/library/:name', (req, res) => {
   const name = validName(req.params.name);
   if (!hasItem(name)) return res.status(404).json({ error: 'not found' });
@@ -593,13 +607,25 @@ app.post('/api/library/:name/frame', async (req, res) => {
 });
 
 // Copy a library item to one or more displays.
-app.post('/api/library/:name/push', (req, res) => {
+app.post('/api/library/:name/push', async (req, res) => {
   const name = validName(req.params.name);
   if (!hasItem(name)) return res.status(404).json({ error: 'not found' });
   const ids = Array.isArray(req.body?.performers ?? req.body?.players)
     ? (req.body.performers ?? req.body.players) : [];
   const size = statSync(itemPath(name)).size;
   const jobs = ids.map((pid) => pushLibraryItem(String(pid), name, size));
+  // Carry the asset's default duration — the media_op writes the state
+  // entry even if the file hasn't landed yet, so it applies on arrival.
+  const dur = itemMeta(name).duration;
+  if (dur) {
+    for (const pid of ids) {
+      try {
+        await requestFromPerformer(String(pid), {
+          type: 'media_op', op: 'duration', name, seconds: dur,
+        }, 5000);
+      } catch { /* offline display — duration applies on next sync */ }
+    }
+  }
   res.json({ jobs });
 });
 

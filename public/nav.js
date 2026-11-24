@@ -78,7 +78,7 @@
     table.rstack td.cell-acts { display: flex; flex-wrap: wrap; gap: 6px;
       padding-top: 6px; }
     table.rstack td.cell-acts button { flex: 1; min-width: 56px;
-      padding: 10px 6px; }
+      padding: 10px 6px; white-space: nowrap; }
   }`;
   const el = document.getElementById("topnav");
   if (!el) return;
