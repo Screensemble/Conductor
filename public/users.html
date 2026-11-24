@@ -54,15 +54,10 @@
   .msg.ok { color: var(--ok); }
   .dimtxt { color: var(--dim); font-size: 12.5px; }
 </style>
+<script src="/icons.js"></script>
 </head>
 <body>
-<header>
-  <img class="mark" src="/logo.png" alt="">
-  <img class="wordmark" src="/wordmark.png" alt="Screensemble">
-  <a class="backlink" href="/">← fleet</a>
-  <a class="backlink" href="/library.html">library</a>
-  <span id="authchip" class="authchip"></span>
-</header>
+<div id="topnav" data-page=""></div>
 <main>
   <div class="card">
     <h2>Users</h2>
@@ -83,6 +78,7 @@
     <div class="msg" id="msg"></div>
   </div>
 </main>
+<script src="/nav.js" defer></script>
 <script src="/auth-chip.js"></script>
 <script>
 const $ = id => document.getElementById(id);

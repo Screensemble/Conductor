@@ -96,30 +96,23 @@
            font-size: 12px; color: var(--dim); display: flex; gap: 16px; }
   .hidden { display: none; }
 </style>
+<script src="/icons.js"></script>
 </head>
 <body>
-<header>
-  <div class="brand">
-    <img class="logo" src="/logo.png" alt="">
-    <img class="mark" src="/wordmark.png" alt="Screensemble">
-    <span class="tag">SERVER</span>
-  </div>
-  <nav>
-    <button id="tabDisplays" class="on" onclick="showTab('displays')">Displays</button>
-    <button id="tabConductor" onclick="showTab('conductor')">Conductor</button>
-    <button id="tabPair" onclick="showTab('pair')">Pairing</button>
-    <a href="/library.html" style="align-self:center;font-size:14px;font-weight:600;color:var(--dim);text-decoration:none;padding:10px 14px">Library</a>
-    <a href="/groups.html" style="align-self:center;font-size:14px;font-weight:600;color:var(--dim);text-decoration:none;padding:10px 14px">Groups</a>
-    <a href="/battons.html" style="align-self:center;font-size:14px;font-weight:600;color:var(--dim);text-decoration:none;padding:10px 14px">Battons</a>
-  </nav>
-  <span id="authchip" class="authchip"></span>
-  <div class="right"><span id="onlineCount"></span><span id="serverName"></span></div>
-</header>
+<div id="topnav" data-page="displays"></div>
+<nav class="subnav">
+  <button id="tabDisplays" class="on" onclick="showTab('displays')">Displays</button>
+  <button id="tabConductor" onclick="showTab('conductor')">Conductor</button>
+  <button id="tabPair" onclick="showTab('pair')">Pairing</button>
+  <span style="flex:1"></span>
+  <span id="onlineCount" style="align-self:center;font-size:12px;color:var(--dim)"></span>
+  <span id="serverName" style="align-self:center;font-size:12px;color:var(--dim)"></span>
+</nav>
 <main>
   <div id="displays">
     <div class="card">
       <h2>Displays</h2>
-      <table>
+      <table class="rstack">
         <thead><tr>
           <th></th><th>Display</th><th>Version</th><th>Last seen</th>
           <th>Now showing</th><th>Free</th><th></th>
@@ -192,6 +185,7 @@
 </footer>
 
 <script src="/upload-toast.js"></script>
+<script src="/nav.js" defer></script>
 <script src="/auth-chip.js"></script>
 <script>
 const $ = id => document.getElementById(id);
@@ -254,22 +248,23 @@ function render() {
     const labels = (p.labels || [])
       .map(l => `<span class="chip">${esc(l)}</span>`).join("");
     return `<tr data-id="${esc(p.id)}">
-      <td><span class="dot ${dot}"></span></td>
-      <td><a class="name" href="/display.html?id=${encodeURIComponent(p.id)}"
+      <td class="cell-dot"><span class="dot ${dot}"></span></td>
+      <td class="cell-name"><a class="name" href="/display.html?id=${encodeURIComponent(p.id)}"
           title="manage this display">${esc(p.name || p.id)}</a>${labels}
-          ${(st.prepared ?? st.armed) ? '<span class="badge warn">PREPARED</span>' : ""}</td>
-      <td class="dim">${esc(p.client_version || "—")}</td>
-      <td class="dim">${ago(p.last_seen)}</td>
-      <td>${esc(st.current || (st.playing ? "(playing)" : "—"))}
+          ${(st.prepared ?? st.armed) ? '<span class="badge warn">PREPARED</span>' : ""}
+          ${p.name ? `<div class="dim mono" style="font-size:11px">${esc(p.id)}</div>` : ""}</td>
+      <td class="dim" data-l="Version">${esc(p.client_version || "—")}</td>
+      <td class="dim" data-l="Last seen">${ago(p.last_seen)}</td>
+      <td data-l="Now showing">${esc(st.current || (st.playing ? "(playing)" : "—"))}
           ${st.maintenance ? '<span class="badge warn">MENU</span>' : ""}</td>
-      <td class="dim">${st.free_gb != null ? esc(st.free_gb) + " GB" : "—"}</td>
-      <td>
-        <button class="act" onclick="togglePlaylist(${jsArg(p.id)}, this)">☰</button>
-        <button class="act" onclick="cmd(${jsArg(p.id)},'restart')">⟳</button>
-        <button class="act" onclick="cmd(${jsArg(p.id)},'stop')">■</button>
-        <button class="act" onclick="cmd(${jsArg(p.id)},'restart_app')">↻</button>
-        <button class="act" onclick="editLabels(${jsArg(p.id)}, this)">✎</button>
-        <button class="act danger" onclick="removePlayer(${jsArg(p.id)})">✕</button>
+      <td class="dim" data-l="Free">${st.free_gb != null ? esc(st.free_gb) + " GB" : "—"}</td>
+      <td class="cell-acts">
+        <button class="act" title="playlist" aria-label="playlist" onclick="togglePlaylist(${jsArg(p.id)}, this)">${ic("list")}</button>
+        <button class="act" title="restart content" aria-label="restart content" onclick="cmd(${jsArg(p.id)},'restart')">${ic("restart")} Restart</button>
+        <button class="act" title="stop to standby" aria-label="stop to standby" onclick="cmd(${jsArg(p.id)},'stop')">${ic("stop")} Stop</button>
+        <button class="act" title="reboot app" aria-label="reboot app" onclick="cmd(${jsArg(p.id)},'restart_app')">${ic("power")} App</button>
+        <button class="act" title="edit labels" aria-label="edit labels" onclick="editLabels(${jsArg(p.id)}, this)">${ic("edit")}</button>
+        <button class="act danger" title="remove display" aria-label="remove display" onclick="removePlayer(${jsArg(p.id)})">${ic("x")}</button>
       </td>
     </tr>`;
   }).join("");

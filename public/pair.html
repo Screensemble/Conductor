@@ -82,7 +82,8 @@ async function stepServer() {
       this conductor address and code there.</div>
     <button onclick="stepScan()">Scan display QR code</button>
     <button class="ghost" onclick="stepManual()">Enter QR contents manually</button>
-    <div class="hint">Camera scanning needs Chrome/Edge (BarcodeDetector).</div>`;
+    <div class="hint">On iPhone? Camera scanning isn't available in
+      Safari — use <b>Enter QR contents manually</b>.</div>`;
 }
 
 async function stepScan() {
@@ -175,9 +176,11 @@ function watchOutcome() {
         fetch("/api/pair/pending").then(r => r.json()),
       ]);
       const mine = u => (u || "").replace(/\/$/, "") === base;
-      if (((players.performers ?? players.players) || []).some(p => mine(p.client_url))) {
+      const reg = ((players.performers ?? players.players) || [])
+        .find(p => mine(p.client_url));
+      if (reg) {
         clearInterval(t);
-        location.href = "/";
+        stepName(reg.id);
         return;
       }
       const offer = (pending.pending || []).some(p => mine(p.client_url));
@@ -190,6 +193,32 @@ function watchOutcome() {
       }
     } catch (e) { /* conductor hiccup — keep waiting */ }
   }, 2000);
+}
+
+// Paired — offer to name it while the context is fresh. The name is a
+// display setting pushed over the socket, so this works even if the
+// display has already dropped back to its standby.
+function stepName(pid) {
+  $("title").textContent = "Display paired";
+  $("desc").innerHTML = `Give it a name — this is how it appears on the
+    fleet list and in collections.`;
+  $("body").innerHTML = `
+    <label>Display name</label>
+    <input id="dname" placeholder="Lobby TV" maxlength="40">
+    <button onclick="saveName(${esc(JSON.stringify(pid))})">Save name</button>
+    <button class="ghost" onclick="location.href='/'">Skip — go to fleet</button>`;
+  $("dname").focus();
+}
+
+async function saveName(pid) {
+  const name = $("dname").value.trim();
+  if (name) {
+    await fetch(`/api/performers/${encodeURIComponent(pid)}/settings`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ device_name: name }),
+    }).catch(() => {});
+  }
+  location.href = "/";
 }
 
 stepServer();

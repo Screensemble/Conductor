@@ -56,6 +56,13 @@
           color: var(--dim); }
   label.check { display: flex; gap: 8px; align-items: center; margin: 6px 0;
                 color: var(--text); font-size: 13px; }
+  .picklist { max-height: 150px; overflow-y: auto; max-width: 420px;
+              background: #060e1e; border: 1px solid var(--edge);
+              border-radius: 6px; padding: 6px 10px; }
+  .picklist label { display: flex; gap: 8px; align-items: center;
+                    padding: 3px 0; font-size: 13px; color: var(--text);
+                    margin: 0; }
+  .picklist a { color: var(--cyan); }
   .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
   .row > div { min-width: 140px; }
   .actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
@@ -65,25 +72,17 @@
            background: var(--cyan); color: var(--navy); font-weight: 700;
            border-radius: 8px; padding: 9px 18px; opacity: 0;
            transition: opacity .25s; pointer-events: none; }
-</style></head><body>
-<header>
-  <img class="mark" src="/logo.png" alt="">
-  <img class="wordmark" src="/wordmark.png" alt="Screensemble">
-  <a class="backlink" href="/">← fleet</a>
-  <nav>
-    <a class="tab on" href="/groups.html">Groups &amp; ensembles</a>
-    <a class="tab" href="/library.html">Library</a>
-    <a class="tab" href="/battons.html">Battons &amp; automations</a>
-  </nav>
-  <span id="authchip" class="authchip"></span>
-</header>
+</style><script src="/icons.js"></script>
+</head><body>
+<div id="topnav" data-page="groups"></div>
 <main>
   <h2>Collections</h2>
   <div class="dim" style="margin-bottom:10px">
-    A <b>group</b> is an administrative collection — target it for content and
-    commands. An <b>ensemble</b> (orchestrated) prepares and releases as one
-    instrument. <b>Mirrored</b> members show the same content; a mirrored
-    ensemble acts as a single display.
+    Collections let you act on several displays at once.
+    A <b>group</b> is for targeting — send content and commands to all
+    members. An <b>ensemble</b> ("orchestrated") also syncs timing:
+    members get ready together and start on the same instant.
+    <b>Mirrored</b> members show identical content.
   </div>
   <div id="rows"></div>
 
@@ -100,8 +99,10 @@
       </div>
     </div>
     <label>Members</label>
-    <select id="edMembers" multiple size="5" style="width:100%;max-width:420px"></select>
-    <div class="dim" style="font-size:11px;margin-top:2px">ctrl-click to select several</div>
+    <div id="edMembers" class="picklist"></div>
+    <div class="dim" style="font-size:11px;margin-top:2px">
+      <a href="#" onclick="pickAll(true);return false">all</a> /
+      <a href="#" onclick="pickAll(false);return false">none</a></div>
     <div style="margin-top:10px">
       <button class="primary" onclick="saveCollection()">Save collection</button>
       <button onclick="resetEditor()">Clear</button>
@@ -170,20 +171,31 @@ function render() {
       </div>
       <div style="margin:8px 0">${memberChips(c)}</div>
       <div class="actions">
-        <button onclick="hold('${esc(c.id)}', true)">Hold</button>
-        <button onclick="hold('${esc(c.id)}', false)">Release hold</button>
         ${c.orchestrated ? `
-          <button onclick="conductor('${esc(c.id)}','prepare')">Prepare</button>
-          <button class="primary" onclick="conductor('${esc(c.id)}','perform')">Perform</button>
-          <button onclick="conductor('${esc(c.id)}','cancel')">Cancel</button>` : ""}
+          <button class="primary" title="release all staged members at once"
+            onclick="conductor('${esc(c.id)}','perform')">Play now</button>` : ""}
         <button onclick="memberCmd('${esc(c.id)}','next')">Next</button>
-        <button onclick="memberCmd('${esc(c.id)}','stop')">Stop</button>
-        <select id="idle-${esc(c.id)}">
-          ${library.map(n => `<option>${esc(n)}</option>`).join("")}
-        </select>
-        <button onclick="idle('${esc(c.id)}', false)">Push idle</button>
-        <button onclick="idle('${esc(c.id)}', true)">Clear idle</button>
+        <button class="danger" onclick="memberCmd('${esc(c.id)}','stop')">Stop</button>
       </div>
+      <details style="margin-top:8px">
+        <summary class="dim" style="cursor:pointer;font-size:12px">Advanced</summary>
+        <div class="actions" style="margin-top:6px">
+          <button title="hold members on the standby surface"
+            onclick="hold('${esc(c.id)}', true)">Hold</button>
+          <button title="resume normal playback"
+            onclick="hold('${esc(c.id)}', false)">Release hold</button>
+          ${c.orchestrated ? `
+            <button title="stage members, ready for a synchronized start"
+              onclick="conductor('${esc(c.id)}','prepare')">Get ready</button>
+            <button title="cancel the staged session"
+              onclick="conductor('${esc(c.id)}','cancel')">Cancel</button>` : ""}
+          <select id="idle-${esc(c.id)}" title="standby image">
+            ${library.map(n => `<option>${esc(n)}</option>`).join("")}
+          </select>
+          <button onclick="idle('${esc(c.id)}', false)">Set standby image</button>
+          <button onclick="idle('${esc(c.id)}', true)">Clear standby</button>
+        </div>
+      </details>
     </div>`).join("")
     || '<div class="card dim">No collections yet — build one below.</div>';
 }
@@ -192,13 +204,26 @@ function render() {
 
 function fillMembers() {
   $("edMembers").innerHTML = performers.map(p =>
-    `<option value="${esc(p.id)}">${p.online ? "●" : "○"} ` +
-    `${esc(p.name || p.id)}</option>`).join("");
+    `<label><input type="checkbox" value="${esc(p.id)}">` +
+    `${p.online ? "●" : "○"} ${esc(p.name || p.id)}</label>`).join("")
+    || '<span class="dim">no displays paired</span>';
+}
+function pickAll(on) {
+  document.querySelectorAll("#edMembers input").forEach(c => c.checked = on);
+}
+function membersGet() {
+  return [...document.querySelectorAll("#edMembers input:checked")]
+    .map(c => c.value);
+}
+function membersSet(ids) {
+  const on = new Set(ids || []);
+  document.querySelectorAll("#edMembers input").forEach(c =>
+    c.checked = on.has(c.value));
 }
 function resetEditor() {
   $("edId").value = ""; $("edName").value = "";
   $("edOrch").checked = false; $("edMirror").checked = false;
-  [...$("edMembers").options].forEach(o => o.selected = false);
+  pickAll(false);
   $("edTitle").textContent = "New collection";
 }
 function editCollection(id) {
@@ -207,8 +232,7 @@ function editCollection(id) {
   $("edId").value = c.id; $("edName").value = c.name || "";
   $("edOrch").checked = !!c.orchestrated;
   $("edMirror").checked = !!c.mirrored;
-  [...$("edMembers").options].forEach(o =>
-    o.selected = (c.members || []).includes(o.value));
+  membersSet(c.members);
   $("edTitle").textContent = `Edit ${c.name || c.id}`;
   window.scrollTo(0, document.body.scrollHeight);
 }
@@ -218,7 +242,7 @@ async function saveCollection() {
     name: $("edName").value.trim(),
     orchestrated: $("edOrch").checked,
     mirrored: $("edMirror").checked,
-    members: [...$("edMembers").selectedOptions].map(o => o.value),
+    members: membersGet(),
   };
   if (!body.name) return toast("name the collection first");
   const r = await api("/collections" + (id ? "/" + id : ""),
@@ -253,6 +277,7 @@ async function conductor(id, cmd) {
   toast(r?.delivered != null ? `${cmd} → ${r.delivered} display(s)` : cmd);
 }
 async function memberCmd(id, cmd) {
+  if (cmd === "stop" && !confirm("Stop playback on all members?")) return;
   const c = collections.find(x => x.id === id);
   if (!c?.members?.length) return toast("no members");
   let ok = 0;
@@ -284,4 +309,6 @@ async function idle(id, clear) {
 refresh();
 setInterval(refresh, 15_000);
 </script>
+<script src="/nav.js" defer></script>
+<script src="/auth-chip.js"></script>
 </body></html>

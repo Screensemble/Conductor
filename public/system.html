@@ -1,0 +1,133 @@
+<!doctype html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Screensemble — System</title>
+<link rel="icon" type="image/png" href="/favicon.png">
+<script src="/icons.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 "Segoe UI", system-ui, sans-serif;
+         background: var(--navy); color: var(--text); }
+  :root {
+    --navy: #0a1428; --card: #10203c; --edge: #1d3a63;
+    --cyan: #4ecbe8; --text: #dce9f5; --dim: #7e95b3; --red: #e86a6a;
+  }
+  .mark { height: 34px; }
+  .wordmark { height: 18px; }
+  main { padding: 18px; max-width: 720px; }
+  h2 { margin: 22px 0 10px; font-size: 15px; color: var(--cyan);
+       letter-spacing: .4px; }
+  h2:first-child { margin-top: 0; }
+  .card { background: var(--card); border: 1px solid var(--edge);
+          border-radius: 8px; padding: 14px 16px; margin-bottom: 12px; }
+  table { border-collapse: collapse; }
+  td { padding: 4px 14px 4px 0; }
+  td:first-child { color: var(--dim); font-size: 12px; }
+  .dim { color: var(--dim); }
+  .mono { font-family: Consolas, monospace; font-size: 12px; }
+  button { background: var(--edge); border: 0; color: var(--text);
+           border-radius: 6px; padding: 8px 14px; cursor: pointer;
+           font-size: 13px; }
+  button:hover { background: #27507f; }
+  button.primary { background: var(--cyan); color: var(--navy); font-weight: 700; }
+  button.danger { color: var(--red); border: 1px solid var(--red);
+                  background: none; }
+  #toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+           background: var(--cyan); color: var(--navy); font-weight: 700;
+           border-radius: 8px; padding: 9px 18px; opacity: 0;
+           transition: opacity .25s; pointer-events: none; }
+</style></head><body>
+<div id="topnav" data-page="system"></div>
+<main>
+  <h2>Server</h2>
+  <div class="card"><table id="info"></table></div>
+
+  <h2>Fleet</h2>
+  <div class="card"><table id="fleet"></table></div>
+
+  <h2>Backup &amp; restore</h2>
+  <div class="card">
+    <p class="dim" style="margin-top:0">A backup bundles the registry,
+      playlists, library, automations, collections, and auth database
+      into one .tar.gz. Restoring stages the file and applies it on the
+      next server start — the current data is kept aside as
+      <span class="mono">restore-old/</span> for one boot.</p>
+    <a href="/api/backup" download>
+      <button class="primary">Download backup (.tar.gz)</button></a>
+    <hr style="border:0;border-top:1px solid var(--edge);margin:14px 0">
+    <b>Restore from file</b>
+    <p class="dim">Pick a backup .tar.gz — it stages now and applies when
+      the conductor next starts. You will be signed out.</p>
+    <input type="file" id="restoreFile" accept=".tar.gz,.tgz,application/gzip">
+    <button class="danger" onclick="doRestore()">Stage restore…</button>
+    <div id="restoreOut" class="mono dim" style="margin-top:8px"></div>
+  </div>
+</main>
+<div id="toast"></div>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g,
+  (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+async function api(path, opts) {
+  const r = await fetch("/api" + path, opts);
+  if (r.status === 401 || r.redirected) return location.href = "/";
+  return r.json().catch(() => null);
+}
+function toast(msg) {
+  const t = $("toast");
+  t.textContent = msg; t.style.opacity = 1;
+  setTimeout(() => t.style.opacity = 0, 2600);
+}
+function row(k, v) { return `<tr><td>${k}</td><td>${v}</td></tr>`; }
+
+async function load() {
+  const [info, health, perf] = await Promise.all([
+    api("/info"), api("/health"), api("/performers"),
+  ]);
+  if (info) {
+    $("info").innerHTML =
+      row("Name", esc(info.name || "—")) +
+      row("Version", esc(info.version)) +
+      row("Role", esc(info.role || health?.role || "—")) +
+      row("Min client version", esc(info.min_client_version || "—")) +
+      row("Timezone", esc(health?.tz || "—") +
+        ` <span class="dim">— schedule automations fire on this clock</span>`) +
+      row("Server time", esc(new Date().toLocaleString() +
+        ` <span class="dim">(browser view)</span>`));
+  }
+  const ps = perf?.performers || perf?.players || [];
+  if (ps.length) {
+    const online = ps.filter(p => p.online).length;
+    const versions = [...new Set(ps.map(p => p.client_version).filter(Boolean))];
+    $("fleet").innerHTML =
+      row("Displays", `${online} online / ${ps.length} paired`) +
+      row("Client versions", esc(versions.join(", ") || "—")) +
+      row("Held", String(ps.filter(p => p.status?.held).length));
+  } else {
+    $("fleet").innerHTML = row("Displays", "none paired");
+  }
+}
+
+async function doRestore() {
+  const f = $("restoreFile").files[0];
+  if (!f) return toast("pick a .tar.gz first");
+  if (!confirm(`Stage "${f.name}" for restore?\n\n` +
+      "The current configuration is replaced on the next server start " +
+      "(kept as restore-old/ for one boot).")) return;
+  const r = await fetch("/api/backup/restore", { method: "POST", body: f });
+  const j = await r.json().catch(() => null);
+  if (!r.ok || !j?.ok) {
+    $("restoreOut").textContent = "restore failed: " + (j?.error || r.status);
+    return;
+  }
+  $("restoreOut").textContent =
+    `staged ${j.files?.length ?? "?"} entries — restart the conductor to apply`;
+  toast("Restore staged — restart to apply");
+}
+
+load();
+</script>
+<script src="/nav.js" defer></script>
+<script src="/auth-chip.js"></script>
+</body></html>

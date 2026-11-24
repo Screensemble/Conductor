@@ -55,6 +55,12 @@
           color: var(--dim); }
   .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
   .row > div { min-width: 140px; }
+  .picklist { max-height: 140px; overflow-y: auto; min-width: 170px;
+              background: #060e1e; border: 1px solid var(--edge);
+              border-radius: 6px; padding: 6px 10px; }
+  .picklist label { display: flex; gap: 8px; align-items: center;
+                    padding: 2px 0; font-size: 13px; color: var(--text);
+                    margin: 0; }
   .dayrow { display: flex; gap: 4px; margin-top: 4px; }
   .dayrow button { width: 30px; height: 30px; padding: 0; border-radius: 6px;
                    border: 1px solid var(--edge); background: #060e1e;
@@ -68,18 +74,9 @@
            transition: opacity .25s; pointer-events: none; }
   .hookurl { background: #060e1e; border: 1px solid var(--edge);
              border-radius: 6px; padding: 4px 8px; }
-</style></head><body>
-<header>
-  <img class="mark" src="/logo.png" alt="">
-  <img class="wordmark" src="/wordmark.png" alt="Screensemble">
-  <a class="backlink" href="/">← fleet</a>
-  <nav>
-    <a class="tab on" href="/battons.html">Battons &amp; automations</a>
-    <a class="tab" href="/library.html">Library</a>
-    <a class="tab" href="/groups.html">Groups</a>
-  </nav>
-  <span id="authchip" class="authchip"></span>
-</header>
+</style><script src="/icons.js"></script>
+</head><body>
+<div id="topnav" data-page="automations"></div>
 <main>
   <h2>Battons</h2>
   <div id="pending" class="card" style="display:none"></div>
@@ -140,18 +137,20 @@
       <div id="wPlaylist" style="display:none"><label>Playlist</label>
         <select id="edPlaylist"></select></div>
       <div><label>Displays</label>
-        <select id="edPerformers" multiple size="3" style="min-width:170px"></select>
-        <div class="dim" style="font-size:11px">empty = all online</div></div>
-      <div><label>Cooldown (ms)</label>
-        <input id="edCooldown" type="number" value="30000" style="width:90px"></div>
+        <div id="edPerformers" class="picklist"></div>
+        <div class="dim" style="font-size:11px">empty = all online ·
+          <a href="#" onclick="perfPickAll(true);return false">all</a> /
+          <a href="#" onclick="perfPickAll(false);return false">none</a></div></div>
+      <div><label>Cooldown (seconds)</label>
+        <input id="edCooldown" type="number" step="0.1" min="0" value="30" style="width:90px"></div>
       <div><label>Re-fire</label>
         <select id="edRetrigger">
           <option value="ignore">ignore</option>
           <option value="queue">queue</option>
           <option value="restart">restart</option>
         </select></div>
-      <div><label>Lead (ms)</label>
-        <input id="edLead" type="number" value="500" style="width:80px"></div>
+      <div><label>Lead (seconds)</label>
+        <input id="edLead" type="number" step="0.1" min="0" value="0.5" style="width:80px"></div>
     </div>
     <div id="wHook" class="mono" style="display:none;margin-top:8px"></div>
     <div style="margin-top:10px">
@@ -250,7 +249,7 @@ function renderBattons() {
       <td class="dim">${ago(b.last_seen)}</td>
       <td style="white-space:nowrap">
         <button onclick="renameBatton('${esc(b.id)}')">Rename</button>
-        <button class="danger" onclick="delBatton('${esc(b.id)}')">✕</button>
+        <button class="danger" onclick="delBatton('${esc(b.id)}')" aria-label="delete">${ic("x")}</button>
       </td>
     </tr>`).join("")
   : `<tr><td colspan="7" class="dim">No Battons paired — open a Batton's
@@ -313,7 +312,7 @@ function renderAutos() {
         ${a.when?.type === "webhook" ? `<button onclick="copyHook('${esc(a.when.key)}')">URL</button>` : ""}
         <button onclick="testFire('${esc(id)}')">Test</button>
         <button onclick="editAutomation('${esc(id)}')">Edit</button>
-        <button class="danger" onclick="delAutomation('${esc(id)}')">✕</button>
+        <button class="danger" onclick="delAutomation('${esc(id)}')" aria-label="delete">${ic("x")}</button>
       </td>
     </tr>`).join("")
   : `<tr><td colspan="5" class="dim">No automations yet — build one below.</td></tr>`;
@@ -335,13 +334,27 @@ function fillInputs() {
 }
 function fillPerformers() {
   const cols = collections.map(c =>
-    `<option value="${esc(c.id)}">&#9658; ${esc(c.name || c.id)}</option>`).join("");
+    `<label><input type="checkbox" value="${esc(c.id)}">` +
+    `&#9658; ${esc(c.name || c.id)}</label>`).join("");
   $("edPerformers").innerHTML =
-    (cols ? `<optgroup label="Collections">${cols}</optgroup>` : "") +
-    `<optgroup label="Displays">` +
+    (cols ? `<div class="dim" style="font-size:11px">Collections</div>${cols}` : "") +
+    `<div class="dim" style="font-size:11px">Displays</div>` +
     performers.map(p =>
-      `<option value="${esc(p.id)}">${esc(p.name || p.id)}</option>`).join("") +
-    `</optgroup>`;
+      `<label><input type="checkbox" value="${esc(p.id)}">` +
+      `${esc(p.name || p.id)}</label>`).join("")
+    || '<span class="dim">none paired</span>';
+}
+function perfPickAll(on) {
+  document.querySelectorAll("#edPerformers input").forEach(c => c.checked = on);
+}
+function perfGet() {
+  return [...document.querySelectorAll("#edPerformers input:checked")]
+    .map(c => c.value);
+}
+function perfSet(ids) {
+  const on = new Set(ids || []);
+  document.querySelectorAll("#edPerformers input").forEach(c =>
+    c.checked = on.has(c.value));
 }
 function fillPlaylists() {
   $("edPlaylist").innerHTML = Object.keys(playlists).map(n =>
@@ -396,12 +409,10 @@ function editAutomation(id) {
   $("edAction").value = a.then?.action || "sync";
   $("edItem").value = a.then?.item || "";
   if (a.then?.action === "playlist") $("edPlaylist").value = a.then.item || "";
-  for (const o of $("edPerformers").options) {
-    o.selected = (a.then?.performers || []).includes(o.value);
-  }
-  $("edCooldown").value = a.cooldown_ms ?? 30000;
+  perfSet(a.then?.performers || []);
+  $("edCooldown").value = (a.cooldown_ms ?? 30000) / 1000;
   $("edRetrigger").value = a.retrigger || "ignore";
-  $("edLead").value = a.lead_ms ?? 500;
+  $("edLead").value = (a.lead_ms ?? 500) / 1000;
   if (a.when?.type === "webhook") {
     $("wHook").style.display = "";
     $("wHook").innerHTML =
@@ -435,7 +446,7 @@ async function saveAutomation() {
   const act = $("edAction").value;
   const then = {
     action: act,
-    performers: [...$("edPerformers").selectedOptions].map(o => o.value),
+    performers: perfGet(),
     ...(act === "playlist"
       ? ($("edPlaylist").value ? { item: $("edPlaylist").value } : {})
       : ($("edItem").value.trim() ? { item: $("edItem").value.trim() } : {})),
@@ -444,9 +455,9 @@ async function saveAutomation() {
   const body = {
     name: $("edName").value.trim() || "automation",
     when, then,
-    cooldown_ms: +$("edCooldown").value || 0,
+    cooldown_ms: Math.round((+$("edCooldown").value || 0) * 1000),
     retrigger: $("edRetrigger").value,
-    lead_ms: +$("edLead").value || 500,
+    lead_ms: Math.round((+$("edLead").value || 0.5) * 1000),
   };
   const id = $("edId").value;
   const r = id
@@ -476,4 +487,6 @@ whenTypeChanged(); actionChanged();
 refresh();
 setInterval(refresh, 5000);
 </script>
+<script src="/nav.js" defer></script>
+<script src="/auth-chip.js"></script>
 </body></html>

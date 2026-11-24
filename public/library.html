@@ -100,19 +100,10 @@
   .dperf .dot.on { background: #4caf50; }
   .syncres { font-size: 12px; color: var(--dim); margin-top: 8px; }
 </style>
+<script src="/icons.js"></script>
 </head>
 <body>
-<header>
-  <img class="mark" src="/logo.png" alt="">
-  <img class="wordmark" src="/wordmark.png" alt="Screensemble">
-  <a class="backlink" href="/">← fleet</a>
-  <nav>
-    <button class="tab on">Library &amp; playlists</button>
-    <a class="tab" href="/battons.html">Battons &amp; automations</a>
-    <a class="tab" href="/groups.html">Groups</a>
-  </nav>
-  <span id="authchip" class="authchip"></span>
-</header>
+<div id="topnav" data-page="library"></div>
 <main>
 
   <!-- ============ Library ============ -->
@@ -203,7 +194,12 @@ function thumbHtml(i) {
     return `<img class="thumb" src="/api/library/file/${encodeURIComponent(i.name)}" alt="">`;
   return '<div class="thumb thumbicon">video</div>';
 }
-function fmtSize(b) { return (b / 1048576).toFixed(1) + ' MB'; }
+function fmtSize(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return (b / 1024).toFixed(0) + ' KB';
+  if (b < 1073741824) return (b / 1048576).toFixed(1) + ' MB';
+  return (b / 1073741824).toFixed(2) + ' GB';
+}
 
 async function refresh() {
   const [l, p, pl] = await Promise.all([
@@ -232,7 +228,7 @@ function renderLib() {
         ? `<button class="mini" title="extract a still frame" ` +
           `onclick="frameRow(this, ${jsArg(i.name)})">frame</button> ` : '') +
       `<button class="mini danger" ` +
-      `onclick="delLib(${jsArg(i.name)})">✕</button></td></tr>`
+      `onclick="delLib(${jsArg(i.name)})" aria-label="delete">${ic("x")} Delete</button></td></tr>`
     ).join('') + '</table>';
 }
 
@@ -402,7 +398,7 @@ function renderPlEditor() {
           `<span class="k">${escH(it ? it.kind : 'missing')}</span>` +
           `<button class="mini secondary" onclick="plMove(${i},-1)">↑</button>` +
           `<button class="mini secondary" onclick="plMove(${i},1)">↓</button>` +
-          `<button class="mini danger" onclick="plDel(${i})">✕</button></div>`;
+          `<button class="mini danger" onclick="plDel(${i})" aria-label="delete playlist">${ic("x")}</button></div>`;
       }).join('')
     : '<div class="muted" style="padding:6px">no items — add from the library</div>';
   $('plPlayers').innerHTML = '<b>Displays:</b>' + (
@@ -476,6 +472,7 @@ async function deletePlaylist() {
 refresh();
 setInterval(refresh, 15000);
 </script>
+<script src="/nav.js" defer></script>
 <script src="/auth-chip.js"></script>
 </body>
 </html>

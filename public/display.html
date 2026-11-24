@@ -100,27 +100,22 @@
   .backlink { color: var(--dim); font-size: 13px; text-decoration: none; }
   .backlink:hover { color: var(--cyan); }
 </style>
+<script src="/icons.js"></script>
 </head>
 <body>
-<header>
-  <img class="mark" src="/logo.png" alt="">
-  <img class="wordmark" src="/wordmark.png" alt="Screensemble">
-  <a class="backlink" href="/">← fleet</a>
-  <a class="backlink" href="/library.html">library</a>
-  <a class="backlink" href="/groups.html">groups</a>
-  <nav>
-    <button class="tab on" id="tab-remote" onclick="showTab('remote')">Remote</button>
-    <button class="tab" id="tab-playlist" onclick="showTab('playlist')">Playlist</button>
-    <button class="tab" id="tab-add" onclick="showTab('add')">Add media</button>
-    <button class="tab" id="tab-settings" onclick="showTab('settings')">Settings</button>
-    <button class="tab" id="tab-system" onclick="showTab('system')">System</button>
-  </nav>
-  <span id="authchip" class="authchip"></span>
-  <div class="right">
+<div id="topnav" data-page="displays"></div>
+<nav class="subnav">
+  <button class="on" id="tab-remote" onclick="showTab('remote')">Remote</button>
+  <button id="tab-playlist" onclick="showTab('playlist')">Playlist</button>
+  <button id="tab-add" onclick="showTab('add')">Add media</button>
+  <button id="tab-settings" onclick="showTab('settings')">Settings</button>
+  <button id="tab-system" onclick="showTab('system')">System</button>
+  <span style="flex:1"></span>
+  <span style="align-self:center;display:flex;align-items:center;gap:6px">
     <span class="dot" id="statusDot"></span>
-    <span class="muted" id="statusText">connecting…</span>
-  </div>
-</header>
+    <span class="muted" id="statusText" style="font-size:12px">connecting…</span>
+  </span>
+</nav>
 <main>
 
   <!-- ============ Remote (transport + maintenance) ============ -->
@@ -130,10 +125,10 @@
       <div id="rmState" class="muted">—</div>
       <div id="rmCurrent" style="font-size:18px;margin:6px 0 14px">—</div>
       <div class="row">
-        <button onclick="cmd('prev')" title="previous item">&#9198;</button>
-        <button id="rmPause" onclick="cmd('pause')" title="pause/resume">&#9208;</button>
-        <button onclick="cmd('next')" title="next item">&#9197;</button>
-        <button class="danger" onclick="cmd('stop')" title="stop to standby">&#9209;</button>
+        <button onclick="cmd('prev')" title="previous item" aria-label="previous item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 5v14M18 5l-9 7 9 7z"/></svg> Prev</button>
+        <button id="rmPause" onclick="cmd('pause')" title="pause/resume" aria-label="pause or resume"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5v14M16 5v14"/></svg> Pause</button>
+        <button onclick="cmd('next')" title="next item" aria-label="next item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 5v14M6 5l9 7-9 7z"/></svg> Next</button>
+        <button class="danger" onclick="cmd('stop')" title="stop to standby" aria-label="stop to standby"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h10v10H7z"/></svg> Stop</button>
       </div>
     </div>
     <div class="panel">
@@ -318,7 +313,7 @@ async function api(path, opts) {
 function showTab(name) {
   for (const t of ['remote','playlist','add','settings','system']) {
     $('page-' + t).hidden = t !== name;
-    $('tab-' + t).className = 'tab' + (t === name ? ' on' : '');
+    $('tab-' + t).className = t === name ? 'on' : '';
   }
 }
 
@@ -415,10 +410,10 @@ function rowHtml(i, draggable) {
       onchange="toggleItem(${n}, this.checked)"></td>` +
     `<td class="num">` +
     `<button class="mini secondary" title="play now" onclick="playItem(${n})">▶</button> ` +
-    `<button class="mini secondary" title="edit" onclick="toggleEdit(${n})">✎</button> ` +
+    `<button class="mini secondary" title="edit" aria-label="edit" onclick="toggleEdit(${n})">${ic("edit")}</button> ` +
     `<button class="mini secondary" title="move up" onclick="moveItem(${n},-1)">↑</button> ` +
     `<button class="mini secondary" title="move down" onclick="moveItem(${n},1)">↓</button> ` +
-    `<button class="mini danger" title="delete" onclick="delItem(${n})">✕</button></td></tr>` +
+    `<button class="mini danger" title="delete" aria-label="delete" onclick="delItem(${n})">${ic("x")}</button></td></tr>` +
     editRow;
 }
 
@@ -757,6 +752,7 @@ loadIdlePick();
 refresh();
 setInterval(refresh, 5000);
 </script>
+<script src="/nav.js" defer></script>
 <script src="/auth-chip.js"></script>
 </body>
 </html>

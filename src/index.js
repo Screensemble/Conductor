@@ -325,6 +325,15 @@ app.delete('/api/users/:id', requireAdmin, async (req, res) => {
     return res.status(400).json({ error: 'cannot delete your own account' });
   }
   try {
+    const out = await auth.api.listUsers({
+      headers: fromNodeHeaders(req.headers),
+      query: {},
+    });
+    const admins = (out?.users ?? out ?? []).filter((u) => u.role === 'admin');
+    const target = admins.find((u) => u.id === req.params.id);
+    if (target && admins.length === 1) {
+      return res.status(400).json({ error: 'cannot delete the last admin' });
+    }
     await auth.api.removeUser({
       headers: fromNodeHeaders(req.headers),
       body: { userId: req.params.id },
