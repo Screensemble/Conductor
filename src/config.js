@@ -17,4 +17,9 @@ export const config = {
   serverInfo: process.env.SERVER_INFO ?? '',
   // Displays older than this are refused pairing (reported via /api/info).
   minClientVersion: process.env.MIN_CLIENT_VERSION ?? '0.0.0',
+  // IP/CIDR of a reverse proxy in front of the conductor. When set,
+  // x-forwarded-for is honored for rate limiting; unset (direct LAN —
+  // the common case) the socket address is authoritative so a forged
+  // header can't bypass throttling.
+  trustedProxy: process.env.TRUSTED_PROXY ?? '',
 };

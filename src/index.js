@@ -10,6 +10,7 @@ import {
   clearChange,
   fileAllowed,
   flagChange,
+  dropMeta,
   mustChange,
   seedDefaultUser,
   sessionOf,
@@ -89,6 +90,17 @@ setStatusHook(onPerformerStatus);
 
 const MAX_UPLOAD_BYTES = Number(process.env.MAX_UPLOAD_MB ?? 4096) * 1024 * 1024;
 const UPLOAD_PATH = /^\/api\/(library|(?:players|performers)\/[^/]+\/upload|backup\/restore)$/;
+
+// Client IP for better-auth rate limiting: behind a trusted proxy the
+// client's x-forwarded-for is walked server-side; on a direct LAN the
+// socket address is authoritative — overwrite any client-supplied header
+// so a forged XFF can't hop buckets and bypass throttling.
+app.use((req, _res, next) => {
+  if (!config.trustedProxy) {
+    req.headers['x-forwarded-for'] = req.socket.remoteAddress;
+  }
+  next();
+});
 
 // Better Auth owns /api/auth/* — mounted before express.json() so it can
 // read request bodies itself.
@@ -263,14 +275,19 @@ app.post('/api/me/set-password', async (req, res) => {
     return res.status(400).json({ error: `password must have ${PASSWORD_RULE}` });
   }
   try {
-    await auth.api.changePassword({
+    const out = await auth.api.changePassword({
       headers: fromNodeHeaders(req.headers),
       body: {
         currentPassword: current_password,
         newPassword: new_password,
         revokeOtherSessions: true,
       },
+      returnHeaders: true,
     });
+    // changePassword issues a rotated session cookie — forward it or the
+    // revoked session dumps the user on the login page with no message.
+    const cookies = out?.headers?.getSetCookie?.() ?? [];
+    if (cookies.length) res.setHeader('set-cookie', cookies);
   } catch (e) {
     return res
       .status(400)
@@ -351,6 +368,7 @@ app.delete('/api/users/:id', requireAdmin, async (req, res) => {
       headers: fromNodeHeaders(req.headers),
       body: { userId: req.params.id },
     });
+    dropMeta(req.params.id); // don't let a forced-change flag outlive the user
     res.json({ ok: true });
   } catch (e) {
     res.status(400).json({ error: e?.body?.message || e.message });
@@ -490,7 +508,13 @@ app.post('/api/performers/:id/settings', async (req, res) => {
       type: 'set_setting',
       settings: req.body || {},
     });
-    res.json({ saved: reply.saved || {} });
+    // device_name otherwise only propagates back on the next status
+    // report — the fleet would show "unnamed" for the interim seconds.
+    const saved = reply.saved || {};
+    if (typeof saved.device_name === 'string') {
+      registry.upsert(req.params.id, { name: saved.device_name });
+    }
+    res.json({ saved });
   } catch (e) {
     res.status(502).json({ error: `display unreachable: ${e.message}` });
   }
@@ -1004,8 +1028,8 @@ app.post('/api/backup/restore', async (req, res) => {
     chunks.push(c);
   }
   try {
-    const files = await stageRestore(Buffer.concat(chunks));
-    res.json({ ok: true, files, note: 'restore applies on restart' });
+    const count = await stageRestore(Buffer.concat(chunks));
+    res.json({ ok: true, count, note: 'restore applies on restart' });
   } catch (e) {
     res.status(400).json({ error: `invalid backup: ${e.message}` });
   }

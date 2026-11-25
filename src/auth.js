@@ -25,6 +25,13 @@ authDb.exec(`
     must_change_password INTEGER NOT NULL DEFAULT 0
   );
 `);
+// `seeded` marks the default admin the conductor shipped with — the only
+// account whose pending password change should gate pairing. Older
+// databases lack the column: add it here; the row-level cleanup runs in
+// seedDefaultUser once better-auth's own tables exist.
+try {
+  authDb.exec('ALTER TABLE users_meta ADD COLUMN seeded INTEGER NOT NULL DEFAULT 0');
+} catch {}
 
 // Session secret — env wins; otherwise generate once and persist so
 // sessions survive restarts without committing anything to the repo.
@@ -55,6 +62,14 @@ export const auth = betterAuth({
   // the session cookie Secure — browsers then drop it on the plain-HTTP
   // LAN origins this system runs on, and login loops forever.
   advanced: {
+    // Rate limiting keys on client IP — behind a proxy honor
+    // x-forwarded-for, otherwise the socket address injected by the
+    // express middleware supplies it.
+    ipAddress: {
+      ...(process.env.TRUSTED_PROXY
+        ? { trustedProxies: [process.env.TRUSTED_PROXY] }
+        : {}),
+    },
     disableCSRFCheck: true,
     useSecureCookies:
       process.env.SECURE_COOKIES === 'true' ||
@@ -85,6 +100,12 @@ export async function seedDefaultUser() {
   // construction — run it before touching the user table.
   const { runMigrations } = await getMigrations(auth.options);
   await runMigrations();
+  // Keep users_meta consistent with the user table: drop rows for deleted
+  // users (an orphan with must_change_password=1 would gate pairing
+  // forever), and mark the first-created user as the seeded admin.
+  authDb.exec('DELETE FROM users_meta WHERE user_id NOT IN (SELECT id FROM user)');
+  authDb.exec(`UPDATE users_meta SET seeded = 1 WHERE user_id =
+    (SELECT id FROM user ORDER BY createdAt ASC LIMIT 1)`);
   const row = authDb.prepare('SELECT COUNT(*) AS n FROM user').get();
   if (row.n > 0) return;
   // Server-side createUser (no request headers) bypasses the admin-session
@@ -101,7 +122,7 @@ export async function seedDefaultUser() {
   const id = res?.user?.id;
   if (!id) return;
   authDb
-    .prepare('INSERT OR REPLACE INTO users_meta (user_id, must_change_password) VALUES (?, 1)')
+    .prepare('INSERT OR REPLACE INTO users_meta (user_id, must_change_password, seeded) VALUES (?, 1, 1)')
     .run(id);
   console.log(
     `auth: seeded default admin "${DEFAULT_USER}" — password change required at first login`,
@@ -117,15 +138,23 @@ export function mustChange(userId) {
 }
 
 export function flagChange(userId) {
+  // Upsert — plain REPLACE would wipe the seeded marker when the
+  // default admin's own password is reset.
   authDb
-    .prepare('INSERT OR REPLACE INTO users_meta (user_id, must_change_password) VALUES (?, 1)')
+    .prepare(`INSERT INTO users_meta (user_id, must_change_password) VALUES (?, 1)
+              ON CONFLICT(user_id) DO UPDATE SET must_change_password = 1`)
     .run(userId);
 }
 
 export function clearChange(userId) {
   authDb
-    .prepare('INSERT OR REPLACE INTO users_meta (user_id, must_change_password) VALUES (?, 0)')
+    .prepare(`INSERT INTO users_meta (user_id, must_change_password) VALUES (?, 0)
+              ON CONFLICT(user_id) DO UPDATE SET must_change_password = 0`)
     .run(userId);
+}
+
+export function dropMeta(userId) {
+  authDb.prepare('DELETE FROM users_meta WHERE user_id = ?').run(userId);
 }
 
 export async function sessionOf(req) {
@@ -197,13 +226,16 @@ export function passwordOk(pw) {
   return p.length >= 8 && /[a-zA-Z]/.test(p) && /\d/.test(p);
 }
 
-// Any account with a pending forced password change gates pairing — a
-// fresh conductor must be claimed before devices may enroll.
+// Pairing is gated only while the seeded default admin still needs its
+// first-login password change — that's the account a shipped-known
+// credential can sign in as. Operator accounts get the same forced-change
+// UX but were already claimed (an admin set their password), so they
+// must not gate enrollment.
 export function passwordChangePending() {
   try {
     return (
       authDb
-        .prepare('SELECT COUNT(*) AS n FROM users_meta WHERE must_change_password = 1')
+        .prepare('SELECT COUNT(*) AS n FROM users_meta WHERE must_change_password = 1 AND seeded = 1')
         .get().n > 0
     );
   } catch {

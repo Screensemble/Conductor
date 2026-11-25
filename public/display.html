@@ -366,7 +366,8 @@ async function refresh() {
     $('rmState').textContent = state + (s.paused ? ' (paused)' : '');
     $('rmCurrent').textContent = s.current || (s.maintenance ? 'Kodi UI' : 'standby');
     $('rmPause').style.opacity = s.playing ? 1 : 0.4;
-    $('rmMaint').textContent = s.maintenance ? 'Resume presentation' : 'Exit to Kodi UI';
+    maintOn = !!s.maintenance;
+    $('rmMaint').textContent = maintOn ? 'Resume presentation' : 'Exit to Kodi UI';
     ensembleHeld = !!s.held;
     $('ensBtn').textContent = ensembleHeld
       ? 'Release to signage (held now)' : 'Hold for conductor';
@@ -809,7 +810,18 @@ function upload() {
 }
 
 async function toggleMaint() {
-  cmd($('rmMaint').textContent.startsWith('Resume') ? 'resume' : 'exit_ui');
+  const want = maintOn ? 'resume' : 'exit_ui';
+  const r = await api('/command', {method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({cmd: want})});
+  if (r && !r.error) {
+    // Optimistic label — the status poll can lag several seconds, and a
+    // second click before it lands would send the same command again.
+    maintOn = !maintOn;
+    $('rmMaint').textContent = maintOn ? 'Resume presentation' : 'Exit to Kodi UI';
+  }
+  toast(r.error ? 'Failed: ' + r.error : 'Sent: ' + want);
+  refresh();
 }
 
 async function cmd(c, name) {
@@ -821,6 +833,7 @@ async function cmd(c, name) {
 }
 
 let ensembleHeld = false;
+let maintOn = false;
 async function toggleEnsemble() {
   const r = await api('/ensemble', {method: 'POST',
     headers: {'Content-Type': 'application/json'},
