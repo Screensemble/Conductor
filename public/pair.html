@@ -164,6 +164,14 @@ function onScan(raw) {
 
 // Poll until the display answers: accept registers the performer (→
 // the Control Room), decline/expiry drops the pending offer (→ message).
+// Same normalization the server applies to register the display —
+// idempotent: accepts both the raw and the hw-prefixed form.
+const hwKey = h => {
+  const c = String(h ?? "").replace(/^hw-/i, "")
+    .replace(/[^a-z0-9]/gi, "").slice(0, 16);
+  return c ? `hw-${c}` : null;
+};
+
 function watchOutcome() {
   const base = client.base.replace(/\/$/, "");
   // Identify the offer by hardware id, not client_url — the display
@@ -184,9 +192,7 @@ function watchOutcome() {
         // URL match wins; otherwise the newest offer is the one we just sent.
         const ours = offers.find(p => mine(p.client_url)) ||
                      offers[offers.length - 1];
-        // Same normalization the server applies to register the display.
-        const h = ours?.hardware_id;
-        myHw = h ? `hw-${String(h).replace(/[^a-z0-9]/gi, '').slice(0, 16)}` : null;
+        myHw = hwKey(ours?.hardware_id);
       }
       const reg = ((players.performers ?? players.players) || [])
         .find(p => myHw && p.id === myHw);
@@ -195,7 +201,9 @@ function watchOutcome() {
         stepName(reg.id);
         return;
       }
-      const still = myHw && offers.some(p => p.hardware_id === myHw);
+      // /pending returns the registry (hw-) form since 4dc6916; hwKey is
+      // idempotent so this matches whichever form the API sends.
+      const still = myHw && offers.some(p => hwKey(p.hardware_id) === myHw);
       if (myHw && !still) {
         clearInterval(t);
         $("title").textContent = "Pairing declined";
