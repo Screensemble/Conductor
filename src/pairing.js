@@ -186,7 +186,9 @@ pairingRouter.get('/pending', (_req, res) => {
   res.json({
     pending: [...pending.values()].map(
       ({ name, client_url, version, at, hardware_id }) => ({
-        name, client_url, version, at, hardware_id,
+        name, client_url, version, at,
+        // Registry form — callers compare against performers[].id.
+        hardware_id: hardwareKey(hardware_id),
       }),
     ),
   });
