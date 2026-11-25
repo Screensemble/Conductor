@@ -366,7 +366,7 @@ async function refresh() {
     $('rmState').textContent = state + (s.paused ? ' (paused)' : '');
     $('rmCurrent').textContent = s.current || (s.maintenance ? 'Kodi UI' : 'standby');
     $('rmPause').style.opacity = s.playing ? 1 : 0.4;
-    maintOn = !!s.maintenance;
+    if (Date.now() > maintHoldUntil) maintOn = !!s.maintenance;
     $('rmMaint').textContent = maintOn ? 'Resume presentation' : 'Exit to Kodi UI';
     ensembleHeld = !!s.held;
     $('ensBtn').textContent = ensembleHeld
@@ -818,6 +818,10 @@ async function toggleMaint() {
     // Optimistic label — the status poll can lag several seconds, and a
     // second click before it lands would send the same command again.
     maintOn = !maintOn;
+    // The display pushes status on the transition, but a poll landing in
+    // the gap would read the old state and revert the label — hold the
+    // optimistic value for a beat.
+    maintHoldUntil = Date.now() + 8000;
     $('rmMaint').textContent = maintOn ? 'Resume presentation' : 'Exit to Kodi UI';
   }
   toast(r.error ? 'Failed: ' + r.error : 'Sent: ' + want);
@@ -834,6 +838,7 @@ async function cmd(c, name) {
 
 let ensembleHeld = false;
 let maintOn = false;
+let maintHoldUntil = 0;
 async function toggleEnsemble() {
   const r = await api('/ensemble', {method: 'POST',
     headers: {'Content-Type': 'application/json'},

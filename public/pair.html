@@ -166,7 +166,10 @@ function onScan(raw) {
 // the Control Room), decline/expiry drops the pending offer (→ message).
 function watchOutcome() {
   const base = client.base.replace(/\/$/, "");
-  let sawPending = false;
+  // Identify the offer by hardware id, not client_url — the display
+  // reports its own LAN address, which may differ from whatever host the
+  // user used to reach it (loopback, mDNS, NAT, a typed IP).
+  let myHw = null;
   const started = Date.now();
   const t = setInterval(async () => {
     if (Date.now() - started > 120000) { clearInterval(t); return; }
@@ -175,17 +178,25 @@ function watchOutcome() {
         fetch("/api/performers").then(r => r.json()),
         fetch("/api/pair/pending").then(r => r.json()),
       ]);
-      const mine = u => (u || "").replace(/\/$/, "") === base;
+      const offers = pending.pending || [];
+      if (!myHw) {
+        const mine = u => (u || "").replace(/\/$/, "") === base;
+        // URL match wins; otherwise the newest offer is the one we just sent.
+        const ours = offers.find(p => mine(p.client_url)) ||
+                     offers[offers.length - 1];
+        // Same normalization the server applies to register the display.
+        const h = ours?.hardware_id;
+        myHw = h ? `hw-${String(h).replace(/[^a-z0-9]/gi, '').slice(0, 16)}` : null;
+      }
       const reg = ((players.performers ?? players.players) || [])
-        .find(p => mine(p.client_url));
+        .find(p => myHw && p.id === myHw);
       if (reg) {
         clearInterval(t);
         stepName(reg.id);
         return;
       }
-      const offer = (pending.pending || []).some(p => mine(p.client_url));
-      sawPending = sawPending || offer;
-      if (sawPending && !offer) {
+      const still = myHw && offers.some(p => p.hardware_id === myHw);
+      if (myHw && !still) {
         clearInterval(t);
         $("title").textContent = "Pairing declined";
         $("desc").textContent =

@@ -184,8 +184,10 @@ pairingRouter.post('/invite', (req, res) => {
 pairingRouter.get('/pending', (_req, res) => {
   sweep();
   res.json({
-    pending: [...pending.values()].map(({ name, client_url, version, at }) => ({
-      name, client_url, version, at,
-    })),
+    pending: [...pending.values()].map(
+      ({ name, client_url, version, at, hardware_id }) => ({
+        name, client_url, version, at, hardware_id,
+      }),
+    ),
   });
 });
